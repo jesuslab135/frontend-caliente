@@ -1,0 +1,12 @@
+*.agents
+*.log
+*.tmp
+*.bak
+*.swp
+*.cache
+*.pyc
+*.claude
+*.env
+*.pnpm-store
+node_modules/
+dist/
