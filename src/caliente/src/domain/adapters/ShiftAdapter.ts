@@ -23,11 +23,21 @@ export class ShiftCategoryAdapter {
 
 export class ShiftTypeAdapter {
     static fromDTO(dto: ShiftTypeDTO): ShiftType {
+        let categoryCode: string | null = null;
+        let rawCategoryId: number | null = null;
+
+        if (typeof dto.category === 'object' && dto.category !== null) {
+            categoryCode = dto.category.code;
+            rawCategoryId = dto.category.id;
+        } else if (typeof dto.category === 'number') {
+            rawCategoryId = dto.category;
+        }
+
         return new ShiftType(
             dto.id,
             dto.code,
             dto.name,
-            dto.category?.code ?? null,
+            categoryCode,
             dto.start_time,
             dto.end_time,
             dto.is_working_shift,
@@ -35,6 +45,7 @@ export class ShiftTypeAdapter {
             dto.applicable_to_monitor,
             dto.applicable_to_inplay,
             dto.is_active,
+            rawCategoryId,
         );
     }
 

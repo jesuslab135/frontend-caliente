@@ -1,5 +1,5 @@
 import type { IHttpClient } from '@/domain/interfaces/IHttpClient';
-import type { ScheduleDTO, ScheduleWriteDTO, ScheduleGridEditDTO, ScheduleFilterParams } from '@/domain/dtos/ScheduleDTO';
+import type { ScheduleDTO, ScheduleWriteDTO, ScheduleFilterParams } from '@/domain/dtos/ScheduleDTO';
 import { API_ROUTES } from '@/domain/constants/endpoints';
 
 export class ScheduleRepository {
@@ -23,10 +23,6 @@ export class ScheduleRepository {
 
     async update(uuid: string, payload: Partial<ScheduleWriteDTO>): Promise<ScheduleDTO> {
         return this.http.patch<ScheduleDTO>(`${this.base}${uuid}/`, payload);
-    }
-
-    async gridEdit(payload: ScheduleGridEditDTO): Promise<ScheduleDTO> {
-        return this.http.post<ScheduleDTO>(`${this.base}grid-edit/`, payload);
     }
 
     async remove(uuid: string): Promise<void> {

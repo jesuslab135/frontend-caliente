@@ -3,16 +3,17 @@ import type { UserDTO } from '../dtos/AuthDTO';
 
 export class UserAdapter {
     static fromDTO(dto: UserDTO): User {
+        const profile = dto.employee_profile;
         return new User(
-            dto.id,
+            String(dto.id),
             dto.email,
             dto.first_name,
             dto.last_name,
-            dto.employee_id,
-            dto.role,
-            dto.phone,
-            dto.team_id,
-            dto.is_active
+            profile?.employee_id ?? '',
+            profile?.role ?? 'MONITOR_TRADER',
+            profile?.phone ?? '',
+            null,
+            profile?.is_active ?? dto.is_active ?? true
         );
     }
 }

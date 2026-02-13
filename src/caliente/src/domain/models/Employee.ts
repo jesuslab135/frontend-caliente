@@ -14,6 +14,8 @@ export class Employee {
         public teamUuid: string | null,
         public teamName: string | null,
         public preferredShiftCategory: number | null = null,
+        public excludeFromGrid: boolean = false,
+        public readonly dbId: number = 0,
     ) {}
 
     get role(): UserRoleDTO {
@@ -21,16 +23,21 @@ export class Employee {
     }
 
     get fullName(): string {
-        return `${this.firstName} ${this.lastName}`.trim() || this.email;
+        const name = `${this.firstName} ${this.lastName}`.trim();
+        return name || this.employeeId;
     }
 
     get initials(): string {
-        return this.fullName
-            .split(' ')
-            .map(n => n[0])
-            .slice(0, 2)
-            .join('')
-            .toUpperCase();
+        const name = `${this.firstName} ${this.lastName}`.trim();
+        if (name) {
+            return name
+                .split(' ')
+                .map(n => n[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase();
+        }
+        return this.employeeId.slice(0, 2).toUpperCase();
     }
 
     get roleLabel(): string {

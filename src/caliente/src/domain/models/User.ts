@@ -51,6 +51,21 @@ export class User {
         return this._role === 'INPLAY_TRADER';
     }
 
+    /** Custom serialization — ensures role survives JSON.stringify() */
+    toJSON() {
+        return {
+            id: this.id,
+            email: this.email,
+            firstName: this.firstName,
+            lastName: this.lastName,
+            employeeId: this.employeeId,
+            role: this._role,
+            phone: this.phone,
+            teamId: this.teamId,
+            isActive: this.isActive,
+        };
+    }
+
     /** Reconstruct a User instance from a plain JSON object (localStorage hydration) */
     static hydrate(data: Record<string, any>): User {
         return new User(
@@ -59,7 +74,7 @@ export class User {
             data.firstName,
             data.lastName,
             data.employeeId,
-            data._role,
+            data.role || data._role,
             data.phone ?? '',
             data.teamId ?? null,
             data.isActive ?? true

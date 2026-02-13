@@ -11,6 +11,7 @@ export class ShiftType {
         public applicableToMonitor: boolean,
         public applicableToInplay: boolean,
         public isActive: boolean,
+        public rawCategoryId: number | null = null,
     ) {}
 
     get timeRange(): string {

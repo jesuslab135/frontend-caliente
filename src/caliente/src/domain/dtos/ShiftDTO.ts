@@ -12,12 +12,12 @@ export interface ShiftCategoryDTO {
     display_order: number;
 }
 
-/** GET /shifttypes/ */
+/** GET /shifttypes/ — category can be a nested object or integer FK */
 export interface ShiftTypeDTO {
     id: number;
     code: string;
     name: string;
-    category: ShiftCategoryDTO | null;
+    category: ShiftCategoryDTO | number | null;
     start_time: string | null;
     end_time: string | null;
     is_working_shift: boolean;

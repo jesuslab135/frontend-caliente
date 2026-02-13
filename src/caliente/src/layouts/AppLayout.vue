@@ -138,7 +138,7 @@ async function handleLogout() {
           <div class="flex items-center gap-3">
             <div class="text-right hidden sm:block">
               <p class="text-sm font-medium text-arena-900 leading-none">{{ authStore.fullName }}</p>
-              <p class="text-xs text-arena-400 mt-0.5">{{ authStore.user?.roleLabel || 'Trader' }}</p>
+              <p class="text-xs text-arena-400 mt-0.5">{{ authStore.user?.roleLabel || '' }}</p>
             </div>
             <div class="w-8 h-8 rounded-full bg-caliente-50 border border-caliente-100 flex items-center justify-center">
               <span class="text-xs font-semibold text-caliente-600">

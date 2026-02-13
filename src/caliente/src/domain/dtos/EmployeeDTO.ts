@@ -1,7 +1,7 @@
 import type { UserRoleDTO } from './AuthDTO';
 import type { TeamSummaryDTO } from './TeamDTO';
 
-/** Nested Django User fields inside Employee serializer */
+/** Nested Django User fields inside Employee serializer (when backend nests them) */
 export interface EmployeeUserDTO {
     id: number;
     email: string;
@@ -11,13 +11,15 @@ export interface EmployeeUserDTO {
 
 /** Full Employee as returned by GET /employees/ and /employees/:uuid/ */
 export interface EmployeeDTO {
+    id: number;
     uuid: string;
     employee_id: string;
-    user: EmployeeUserDTO;
+    user: EmployeeUserDTO | number;
     role: UserRoleDTO;
-    team: TeamSummaryDTO | null;
+    team: TeamSummaryDTO | number | null;
     phone: string;
     is_active: boolean;
+    exclude_from_grid: boolean;
     hire_date: string | null;
     preferred_shift_category: number | null;
     created_at: string;

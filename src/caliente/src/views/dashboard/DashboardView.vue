@@ -1,11 +1,30 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { httpClient } from '@/di/http'
+import { EmployeeRepository } from '@/domain/repositories/EmployeeRepository'
+import { ScheduleRepository } from '@/domain/repositories/ScheduleRepository'
+import { ShiftRepository } from '@/domain/repositories/ShiftRepository'
 
 const authStore = useAuthStore()
+const employeeRepo = new EmployeeRepository(httpClient)
+const scheduleRepo = new ScheduleRepository(httpClient)
+const shiftRepo = new ShiftRepository(httpClient)
 
-// --- Shared state ---
+// ── Loading state ────────────────────────────────────────
+const isLoadingData = ref(true)
+const loadError = ref(null)
+
+// ── Date helpers ─────────────────────────────────────────
 const currentDate = ref(new Date())
+
+function formatDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function isSameDay(a, b) {
+  return a.getDate() === b.getDate() && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()
+}
 
 const weekStart = computed(() => {
   const d = new Date(currentDate.value)
@@ -25,6 +44,7 @@ const weekDays = computed(() => {
       date: d.getDate(),
       month: d.toLocaleString('es-MX', { month: 'short' }),
       full: new Date(d),
+      dateStr: formatDate(d),
       isToday: isSameDay(d, new Date()),
       isWeekend: i >= 5,
     })
@@ -40,412 +60,714 @@ const weekLabel = computed(() => {
   return `${start.toLocaleDateString('es-MX', opts)} — ${end.toLocaleDateString('es-MX', opts)}, ${end.getFullYear()}`
 })
 
-function isSameDay(a, b) {
-  return a.getDate() === b.getDate() && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()
-}
-
-function navigateWeek(direction) {
+function navigateWeek(dir) {
   const d = new Date(currentDate.value)
-  d.setDate(d.getDate() + (direction * 7))
+  d.setDate(d.getDate() + dir * 7)
   currentDate.value = d
 }
+function goToToday() { currentDate.value = new Date() }
 
-function goToToday() {
-  currentDate.value = new Date()
+// ── Shift color palette (code → tailwind classes) ────────
+const SHIFT_COLORS = {
+  MON6:    { bg: 'bg-blue-50',     text: 'text-blue-700',     border: 'border-blue-200' },
+  MON12:   { bg: 'bg-cyan-50',     text: 'text-cyan-700',     border: 'border-cyan-200' },
+  MON14:   { bg: 'bg-indigo-50',   text: 'text-indigo-700',   border: 'border-indigo-200' },
+  IP6:     { bg: 'bg-emerald-50',  text: 'text-emerald-700',  border: 'border-emerald-200' },
+  IP9:     { bg: 'bg-teal-50',     text: 'text-teal-700',     border: 'border-teal-200' },
+  IP10:    { bg: 'bg-green-50',    text: 'text-green-700',    border: 'border-green-200' },
+  IP12:    { bg: 'bg-lime-50',     text: 'text-lime-700',     border: 'border-lime-200' },
+  IP14:    { bg: 'bg-violet-50',   text: 'text-violet-700',   border: 'border-violet-200' },
+  PM7:     { bg: 'bg-sky-50',      text: 'text-sky-700',      border: 'border-sky-200' },
+  PM9:     { bg: 'bg-sky-50',      text: 'text-sky-600',      border: 'border-sky-200' },
+  NS:      { bg: 'bg-slate-100',   text: 'text-slate-700',    border: 'border-slate-300' },
+  'HO-IP6':  { bg: 'bg-orange-50', text: 'text-orange-700',   border: 'border-orange-200' },
+  'HO-IP10': { bg: 'bg-amber-50',  text: 'text-amber-600',    border: 'border-amber-200' },
+  'HO-IP12': { bg: 'bg-yellow-50', text: 'text-yellow-700',   border: 'border-yellow-200' },
+  'HO-IP14': { bg: 'bg-orange-50', text: 'text-orange-600',   border: 'border-orange-200' },
+  'IP10-FER14': { bg: 'bg-fuchsia-50', text: 'text-fuchsia-700', border: 'border-fuchsia-200' },
+  FERDI10: { bg: 'bg-pink-50',     text: 'text-pink-700',     border: 'border-pink-200' },
+  FERDI14: { bg: 'bg-rose-50',     text: 'text-rose-700',     border: 'border-rose-200' },
+  CUMPLE:  { bg: 'bg-pink-50',     text: 'text-pink-600',     border: 'border-pink-200' },
+  OFF:     { bg: 'bg-arena-50',    text: 'text-arena-400',    border: 'border-arena-200' },
+  VAC:     { bg: 'bg-amber-50',    text: 'text-amber-700',    border: 'border-amber-200' },
+  FES:     { bg: 'bg-purple-50',   text: 'text-purple-700',   border: 'border-purple-200' },
 }
 
-// --- Shift styling ---
-const shiftColors = {
-  MON6:  { bg: 'bg-blue-100',    text: 'text-blue-700',    border: 'border-blue-200',    label: '6:00-14:00' },
-  MON12: { bg: 'bg-cyan-100',    text: 'text-cyan-700',    border: 'border-cyan-200',    label: '12:00-20:00' },
-  MON14: { bg: 'bg-indigo-100',  text: 'text-indigo-700',  border: 'border-indigo-200',  label: '14:00-22:00' },
-  IP6:   { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', label: '6:00-14:00' },
-  IP9:   { bg: 'bg-teal-100',    text: 'text-teal-700',    border: 'border-teal-200',    label: '9:00-17:00' },
-  IP10:  { bg: 'bg-green-100',   text: 'text-green-700',   border: 'border-green-200',   label: '10:00-18:00' },
-  IP12:  { bg: 'bg-lime-100',    text: 'text-lime-700',    border: 'border-lime-200',    label: '12:00-20:00' },
-  IP14:  { bg: 'bg-violet-100',  text: 'text-violet-700',  border: 'border-violet-200',  label: '14:00-22:00' },
-  OFF:   { bg: 'bg-arena-100',   text: 'text-arena-400',   border: 'border-arena-200',   label: 'Libre' },
-  VAC:   { bg: 'bg-amber-100',   text: 'text-amber-700',   border: 'border-amber-200',   label: 'Vacaciones' },
+const CAT_FALLBACK = {
+  AM: { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200' },
+  INS: { bg: 'bg-teal-50', text: 'text-teal-600', border: 'border-teal-200' },
+  MID: { bg: 'bg-indigo-50', text: 'text-indigo-600', border: 'border-indigo-200' },
+  NS: { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-300' },
+  HO: { bg: 'bg-orange-50', text: 'text-orange-600', border: 'border-orange-200' },
+  STATUS: { bg: 'bg-arena-50', text: 'text-arena-500', border: 'border-arena-200' },
+}
+const DEF_COLOR = { bg: 'bg-arena-50', text: 'text-arena-500', border: 'border-arena-200' }
+
+// ── API data refs ────────────────────────────────────────
+const rawEmployees = ref([])       // All employees from API
+const apiShiftTypes = ref([])      // ShiftType models
+const shiftCategories = ref([])    // ShiftCategory models
+const cycleConfigs = ref([])
+const scheduleMap = ref({})        // { employee_uuid: { 'yyyy-mm-dd': shift_code } }
+const scheduleUuidMap = ref({})    // { employee_uuid: { 'yyyy-mm-dd': schedule_uuid } }
+
+// ── Lookup maps (built after loading) ────────────────────
+const empDbIdToUuid = ref({})      // { 18: 'uuid...' }
+const shiftTypeIdToCode = ref({})  // { 22: 'MON6' }
+const shiftTypeCodeToId = ref({})  // { 'MON6': 22 }
+const catIdToCode = ref({})        // { 7: 'AM' }
+
+// ── Filtered employees for grid (exclude admins, exclude_from_grid) ──
+const gridEmployees = computed(() => {
+  return rawEmployees.value.filter(emp => !emp.excludeFromGrid)
+})
+
+// ── Shift display map ────────────────────────────────────
+const shiftDisplayMap = computed(() => {
+  const map = {}
+  apiShiftTypes.value.forEach(st => {
+    const colors = SHIFT_COLORS[st.code] || CAT_FALLBACK[st.categoryCode] || DEF_COLOR
+    let time = st.timeRange
+    if (!time) {
+      if (st.code === 'OFF') time = 'Libre'
+      else if (st.code === 'VAC') time = 'Vacaciones'
+      else if (st.code === 'FES') time = 'Festivo'
+      else if (st.code === 'CUMPLE') time = 'Cumpleaños'
+      else time = ''
+    }
+    map[st.code] = { code: st.code, name: st.name, time, category: st.categoryCode || 'STATUS', ...colors }
+  })
+  return map
+})
+
+function getShiftInfo(code) {
+  return shiftDisplayMap.value[code] || { code, name: code, time: '', ...DEF_COLOR }
 }
 
-function getShiftStyle(code) {
-  return shiftColors[code] || shiftColors.OFF
-}
-
-function getRoleBadge(role) {
-  if (role === 'MONITOR_TRADER') return { label: 'MON', class: 'bg-blue-50 text-blue-600' }
-  if (role === 'INPLAY_TRADER') return { label: 'IP', class: 'bg-emerald-50 text-emerald-600' }
-  if (role === 'MANAGER') return { label: 'MGR', class: 'bg-violet-50 text-violet-600' }
-  return { label: 'ADM', class: 'bg-caliente-50 text-caliente-600' }
-}
-
-// ============================================================
-// ADMIN / MANAGER — Global grid view
-// ============================================================
-
+// ── View state ──────────────────────────────────────────
 const viewMode = ref('week')
-const viewModes = [
-  { key: 'day', label: 'Día' },
-  { key: 'week', label: 'Semana' },
-  { key: 'month', label: 'Mes' },
-  { key: 'team', label: 'Equipo' },
-]
+const scopeMode = ref('team')
 
-// Demo employee list (replaced by API)
-const allEmployees = ref([
-  { id: 1, name: 'Carlos Hernández', employeeId: 'EMP-001', role: 'MONITOR_TRADER', team: 'Equipo A' },
-  { id: 2, name: 'María López', employeeId: 'EMP-002', role: 'MONITOR_TRADER', team: 'Equipo A' },
-  { id: 3, name: 'Juan García', employeeId: 'EMP-003', role: 'INPLAY_TRADER', team: 'Equipo A' },
-  { id: 4, name: 'Ana Martínez', employeeId: 'EMP-004', role: 'INPLAY_TRADER', team: 'Equipo B' },
-  { id: 5, name: 'Roberto Sánchez', employeeId: 'EMP-005', role: 'MONITOR_TRADER', team: 'Equipo B' },
-  { id: 6, name: 'Laura Torres', employeeId: 'EMP-006', role: 'INPLAY_TRADER', team: 'Equipo B' },
-  { id: 7, name: 'Diego Ramírez', employeeId: 'EMP-007', role: 'MONITOR_TRADER', team: 'Equipo A' },
-  { id: 8, name: 'Sofia Flores', employeeId: 'EMP-008', role: 'INPLAY_TRADER', team: 'Equipo A' },
-])
-
-// Demo schedules (employee id → shift codes per day-of-week index)
-const allSchedules = ref({
-  1: ['MON6',  'MON6',  'MON12', 'MON6',  'MON14', 'OFF',   'OFF'],
-  2: ['MON14', 'MON14', 'MON6',  'MON14', 'MON12', 'MON6',  'OFF'],
-  3: ['IP9',   'IP6',   'IP12',  'IP9',   'OFF',   'IP6',   'OFF'],
-  4: ['IP14',  'IP10',  'IP9',   'OFF',   'IP14',  'IP10',  'IP9'],
-  5: ['MON12', 'OFF',   'MON14', 'MON12', 'MON6',  'MON14', 'OFF'],
-  6: ['OFF',   'IP14',  'IP6',   'IP10',  'IP9',   'OFF',   'IP12'],
-  7: ['MON6',  'MON12', 'OFF',   'MON6',  'MON14', 'MON12', 'OFF'],
-  8: ['IP12',  'IP9',   'IP14',  'IP6',   'IP10',  'VAC',   'VAC'],
-})
-
-function getShift(employeeId, dayIndex) {
-  return allSchedules.value[employeeId]?.[dayIndex] || null
+function getShift(empUuid, dateStr) {
+  return scheduleMap.value[empUuid]?.[dateStr] || null
 }
 
-// Coverage stats per day
+// ── Cycle sequences ─────────────────────────────────────
+const shiftCycles = computed(() => {
+  const map = {}
+  cycleConfigs.value.forEach(cfg => {
+    if (cfg.is_default || !map[cfg.trader_role]) map[cfg.trader_role] = cfg.shift_order
+  })
+  if (!map.MONITOR_TRADER) map.MONITOR_TRADER = ['MON6', 'MON12', 'MON14', 'OFF']
+  if (!map.INPLAY_TRADER) map.INPLAY_TRADER = ['IP6', 'IP9', 'IP10', 'IP12', 'IP14', 'OFF']
+  return map
+})
+
+function getCycleForRole(role) { return shiftCycles.value[role] || shiftCycles.value.MONITOR_TRADER || ['OFF'] }
+
+function getNextInCycle(cur, role, dir = 1) {
+  const cycle = getCycleForRole(role)
+  if (!cur) return cycle[0]
+  const idx = cycle.indexOf(cur)
+  if (idx === -1) return cycle[0]
+  return cycle[(idx + dir + cycle.length) % cycle.length]
+}
+
+function getNextShiftPreview(empUuid, dayIndex) {
+  const dateStr = weekDays.value[dayIndex].dateStr
+  const emp = rawEmployees.value.find(e => e.uuid === empUuid)
+  const role = emp?.role || 'MONITOR_TRADER'
+  const current = getShift(empUuid, dateStr)
+  const next = getNextInCycle(current, role, 1)
+  return { current, next }
+}
+
+// ── Undo stack ──────────────────────────────────────────
+const undoStack = ref([])
+const MAX_UNDO = 50
+
+function pushUndo(empUuid, dateStr, oldCode) {
+  undoStack.value.push({ empUuid, dateStr, oldCode })
+  if (undoStack.value.length > MAX_UNDO) undoStack.value.shift()
+}
+
+function undo() {
+  const entry = undoStack.value.pop()
+  if (!entry) return
+  if (!scheduleMap.value[entry.empUuid]) scheduleMap.value[entry.empUuid] = {}
+  if (entry.oldCode) {
+    scheduleMap.value[entry.empUuid][entry.dateStr] = entry.oldCode
+    saveScheduleToApi(entry.empUuid, entry.dateStr, entry.oldCode)
+  } else {
+    delete scheduleMap.value[entry.empUuid][entry.dateStr]
+  }
+  const dayIdx = weekDays.value.findIndex(d => d.dateStr === entry.dateStr)
+  if (dayIdx !== -1) flashCell(entry.empUuid, dayIdx)
+}
+
+// ── Cell flash ──────────────────────────────────────────
+const flashingCell = ref(null)
+let flashTimer = null
+function flashCell(empUuid, dayIndex) {
+  flashingCell.value = `${empUuid}-${dayIndex}`
+  clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => { flashingCell.value = null }, 300)
+}
+
+// ── API schedule save (create or update) ─────────────────
+async function saveScheduleToApi(empUuid, date, shiftCode) {
+  const emp = rawEmployees.value.find(e => e.uuid === empUuid)
+  if (!emp) return
+
+  const shiftTypeId = shiftTypeCodeToId.value[shiftCode]
+  if (!shiftTypeId) return
+
+  try {
+    const existingUuid = scheduleUuidMap.value[empUuid]?.[date]
+    if (existingUuid) {
+      await scheduleRepo.update(existingUuid, { shift_type: shiftTypeId })
+    } else {
+      const dto = await scheduleRepo.create({
+        employee: emp.dbId,
+        shift_type: shiftTypeId,
+        date: date,
+      })
+      if (!scheduleUuidMap.value[empUuid]) scheduleUuidMap.value[empUuid] = {}
+      scheduleUuidMap.value[empUuid][date] = dto.uuid
+    }
+  } catch (err) {
+    console.error('Error saving shift:', err)
+  }
+}
+
+// ── Click-to-cycle (HU-005) ────────────────────────────
+function handleCellClick(employee, dayIndex, event) {
+  event.preventDefault()
+  if (editingCell.value) closeShiftPicker()
+
+  const dateStr = weekDays.value[dayIndex].dateStr
+  const dir = event.shiftKey ? -1 : 1
+  const oldCode = getShift(employee.uuid, dateStr)
+  const newCode = getNextInCycle(oldCode, employee.role, dir)
+
+  pushUndo(employee.uuid, dateStr, oldCode)
+  if (!scheduleMap.value[employee.uuid]) scheduleMap.value[employee.uuid] = {}
+  scheduleMap.value[employee.uuid][dateStr] = newCode
+  flashCell(employee.uuid, dayIndex)
+  saveScheduleToApi(employee.uuid, dateStr, newCode)
+}
+
+// ── Right-click shift picker ────────────────────────────
+const editingCell = ref(null)
+const pickerPos = ref({ top: 0, left: 0 })
+
+function handleCellRightClick(employee, dayIndex, event) {
+  event.preventDefault()
+  event.stopPropagation()
+  const rect = event.currentTarget.getBoundingClientRect()
+  const vw = window.innerWidth, vh = window.innerHeight
+  let top = rect.bottom + 6, left = rect.left
+  if (left + 300 > vw - 16) left = vw - 316
+  if (left < 16) left = 16
+  if (top + 420 > vh - 16) top = rect.top - 426
+  pickerPos.value = { top, left }
+  editingCell.value = { empUuid: employee.uuid, dayIndex }
+}
+
+function selectShift(code) {
+  if (editingCell.value) {
+    const { empUuid, dayIndex } = editingCell.value
+    const dateStr = weekDays.value[dayIndex].dateStr
+    const oldCode = getShift(empUuid, dateStr)
+    pushUndo(empUuid, dateStr, oldCode)
+    if (!scheduleMap.value[empUuid]) scheduleMap.value[empUuid] = {}
+    scheduleMap.value[empUuid][dateStr] = code
+    flashCell(empUuid, dayIndex)
+    saveScheduleToApi(empUuid, dateStr, code)
+  }
+  editingCell.value = null
+}
+
+function removeShift() { selectShift('OFF') }
+function closeShiftPicker() { editingCell.value = null }
+
+// ── Hover tooltip ───────────────────────────────────────
+const tooltipCell = ref(null)
+const tooltipPos = ref({ top: 0, left: 0 })
+let tooltipTimer = null
+
+function handleCellMouseEnter(employee, dayIndex, event) {
+  clearTimeout(tooltipTimer)
+  tooltipTimer = setTimeout(() => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    tooltipPos.value = { top: rect.top - 36, left: rect.left + rect.width / 2 }
+    tooltipCell.value = { empUuid: employee.uuid, dayIndex }
+  }, 500)
+}
+function handleCellMouseLeave() { clearTimeout(tooltipTimer); tooltipCell.value = null }
+
+// ── Global listeners ────────────────────────────────────
+function onGlobalClick(e) {
+  if (editingCell.value && !e.target.closest('.shift-picker-popover') && !e.target.closest('.shift-cell')) closeShiftPicker()
+}
+function onKeydown(e) {
+  if (e.key === 'Escape') closeShiftPicker()
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo() }
+}
+
+// ── Grouped shifts for context menu ─────────────────────
+const groupedShifts = computed(() => {
+  const groups = {}
+  const order = ['AM', 'INS', 'MID', 'NS', 'HO', 'STATUS']
+  order.forEach(catCode => {
+    const cat = shiftCategories.value.find(c => c.code === catCode)
+    const shifts = apiShiftTypes.value.filter(st => st.categoryCode === catCode && st.isActive)
+    if (shifts.length) groups[catCode] = { label: cat?.name || catCode, shifts }
+  })
+  return groups
+})
+
+// ── Coverage stats ──────────────────────────────────────
+const coverageCats = computed(() => shiftCategories.value.filter(c => ['AM', 'INS', 'MID'].includes(c.code)))
+
 const coverageStats = computed(() => {
-  return weekDays.value.map((_, dayIndex) => {
-    let am = 0, ins = 0, mid = 0
-    allEmployees.value.forEach(emp => {
-      const shift = getShift(emp.id, dayIndex)
-      if (shift === 'MON6' || shift === 'IP6') am++
-      if (shift === 'MON12' || shift === 'IP9' || shift === 'IP10' || shift === 'IP12') ins++
-      if (shift === 'MON14' || shift === 'IP14') mid++
+  return weekDays.value.map(day => {
+    const counts = {}
+    shiftCategories.value.forEach(cat => { counts[cat.code] = { count: 0, min: cat.minTraders } })
+    gridEmployees.value.forEach(emp => {
+      const code = getShift(emp.uuid, day.dateStr)
+      if (!code) return
+      const st = apiShiftTypes.value.find(s => s.code === code)
+      if (st?.categoryCode && counts[st.categoryCode]) counts[st.categoryCode].count++
     })
-    return { am, ins, mid }
+    return counts
   })
 })
 
-// Summary cards data (demo)
-const summaryCards = computed(() => [
-  { label: 'Empleados Activos', value: allEmployees.value.length, icon: 'users', accent: 'text-arena-700' },
-  { label: 'En turno hoy', value: allEmployees.value.filter(e => { const s = getShift(e.id, weekDays.value.findIndex(d => d.isToday)); return s && s !== 'OFF' && s !== 'VAC' }).length, icon: 'clock', accent: 'text-success-500' },
-  { label: 'Intercambios pendientes', value: 2, icon: 'swap', accent: 'text-warning-500' },
-  { label: 'Vacaciones pendientes', value: 1, icon: 'sun', accent: 'text-caliente-600' },
-])
+// ── My schedule (trader personal view) ──────────────────
+const myEmployee = computed(() => {
+  const empId = authStore.user?.employeeId
+  return empId ? rawEmployees.value.find(e => e.employeeId === empId) : null
+})
 
-// ============================================================
-// TRADER — Personal schedule view
-// ============================================================
-
-// Simulated "my" schedule — uses employee ID 3 as demo trader
 const mySchedule = computed(() => {
-  const myId = 3 // Will come from authStore.user.id once connected
-  return weekDays.value.map((day, idx) => {
-    const code = allSchedules.value[myId]?.[idx] || 'OFF'
-    return { ...day, shiftCode: code, shiftStyle: getShiftStyle(code) }
+  const emp = myEmployee.value
+  return weekDays.value.map(day => {
+    const code = emp ? (getShift(emp.uuid, day.dateStr) || 'OFF') : 'OFF'
+    return { ...day, shiftCode: code, shiftInfo: getShiftInfo(code) }
   })
 })
 
-const myNextShift = computed(() => {
-  return mySchedule.value.find(d => {
-    const code = d.shiftCode
-    return !d.full || d.full >= new Date() ? code !== 'OFF' && code !== 'VAC' : false
+// ── Data fetching ───────────────────────────────────────
+function buildLookupMaps() {
+  // Employee dbId → uuid
+  const empMap = {}
+  rawEmployees.value.forEach(emp => { empMap[emp.dbId] = emp.uuid })
+  empDbIdToUuid.value = empMap
+
+  // Category id → code
+  const catMap = {}
+  shiftCategories.value.forEach(cat => { catMap[cat.id] = cat.code })
+  catIdToCode.value = catMap
+
+  // Resolve category codes on shift types (backend returns category as integer FK)
+  apiShiftTypes.value.forEach(st => {
+    if (!st.categoryCode && st.rawCategoryId) {
+      st.categoryCode = catMap[st.rawCategoryId] || null
+    }
   })
+
+  // ShiftType id ↔ code
+  const idToCode = {}, codeToId = {}
+  apiShiftTypes.value.forEach(st => {
+    idToCode[st.id] = st.code
+    codeToId[st.code] = st.id
+  })
+  shiftTypeIdToCode.value = idToCode
+  shiftTypeCodeToId.value = codeToId
+}
+
+async function fetchSchedules() {
+  const start = weekStart.value
+  const end = new Date(start)
+  end.setDate(end.getDate() + 6)
+  const dtos = await scheduleRepo.getAll({ date_from: formatDate(start), date_to: formatDate(end) })
+  const codeMap = {}
+  const uuidMap = {}
+  dtos.forEach(dto => {
+    const empUuid = empDbIdToUuid.value[dto.employee]
+    const shiftCode = shiftTypeIdToCode.value[dto.shift_type]
+    if (!empUuid || !shiftCode) return
+    if (!codeMap[empUuid]) codeMap[empUuid] = {}
+    if (!uuidMap[empUuid]) uuidMap[empUuid] = {}
+    codeMap[empUuid][dto.date] = shiftCode
+    uuidMap[empUuid][dto.date] = dto.uuid
+  })
+  scheduleMap.value = codeMap
+  scheduleUuidMap.value = uuidMap
+}
+
+watch(weekStart, () => { fetchSchedules() })
+
+onMounted(async () => {
+  document.addEventListener('click', onGlobalClick)
+  document.addEventListener('keydown', onKeydown)
+  try {
+    isLoadingData.value = true
+    await Promise.all([
+      employeeRepo.getAll().then(r => { rawEmployees.value = r }),
+      shiftRepo.getTypes().then(r => { apiShiftTypes.value = r }),
+      shiftRepo.getCategories().then(r => { shiftCategories.value = r }),
+      shiftRepo.getCycleConfigs().then(r => { cycleConfigs.value = r }).catch(() => { cycleConfigs.value = [] }),
+    ])
+    buildLookupMaps()
+    await fetchSchedules()
+  } catch (err) {
+    loadError.value = err.message || 'Error cargando datos'
+    console.error('Dashboard load error:', err)
+  } finally {
+    isLoadingData.value = false
+  }
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onGlobalClick)
+  document.removeEventListener('keydown', onKeydown)
 })
 </script>
 
 <template>
   <div>
+    <!-- ── LOADING STATE ── -->
+    <div v-if="isLoadingData" class="flex flex-col items-center justify-center py-24 gap-4">
+      <div class="relative w-12 h-12">
+        <div class="absolute inset-0 rounded-full border-4 border-arena-100"></div>
+        <div class="absolute inset-0 rounded-full border-4 border-transparent border-t-caliente-600 animate-spin"></div>
+      </div>
+      <p class="text-sm text-arena-400 font-medium">Cargando horarios...</p>
+    </div>
+
+    <!-- ── ERROR STATE ── -->
+    <div v-else-if="loadError" class="flex flex-col items-center justify-center py-24 gap-4">
+      <div class="w-12 h-12 rounded-full bg-caliente-50 flex items-center justify-center">
+        <svg class="w-6 h-6 text-caliente-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+        </svg>
+      </div>
+      <p class="text-sm text-arena-600 font-medium">{{ loadError }}</p>
+      <button @click="location.reload()" class="px-4 py-2 rounded-lg border border-arena-200 text-sm font-medium text-arena-600 hover:bg-arena-50 transition-colors">
+        Reintentar
+      </button>
+    </div>
+
     <!-- ================================================================ -->
     <!-- ADMIN / MANAGER DASHBOARD                                        -->
     <!-- ================================================================ -->
-    <template v-if="authStore.isManager || authStore.isAdmin">
-      <!-- Summary cards -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div
-          v-for="card in summaryCards"
-          :key="card.label"
-          class="bg-white border border-arena-200 rounded-lg px-5 py-4"
-        >
-          <p class="text-xs font-medium text-arena-400 uppercase tracking-wider">{{ card.label }}</p>
-          <p class="text-2xl font-bold mt-1" :class="card.accent">{{ card.value }}</p>
-        </div>
+    <template v-else-if="authStore.isManager || authStore.isAdmin">
+
+      <!-- Title row -->
+      <div class="mb-6">
+        <h2 class="text-xl font-bold text-arena-900">Horario del Equipo</h2>
+        <p class="text-sm text-arena-400 mt-1">{{ weekLabel }}</p>
       </div>
 
-      <!-- Header row -->
-      <div class="flex items-center justify-between mb-5">
-        <div>
-          <h2 class="text-lg font-semibold text-arena-900">Horarios</h2>
-          <p class="text-sm text-arena-400 mt-0.5">{{ weekLabel }}</p>
-        </div>
+      <!-- ── Toolbar ── -->
+      <div class="flex flex-wrap items-center gap-3 mb-5">
+        <button class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-arena-200 text-sm font-medium text-arena-700 bg-white hover:bg-arena-50 transition-colors">
+          <svg class="w-4 h-4 text-arena-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+          </svg>
+          Crear Horario Mensual
+        </button>
 
-        <div class="flex items-center gap-3">
-          <button class="flex items-center gap-2 px-3.5 py-2 rounded-md bg-caliente-600 text-white text-sm font-medium hover:bg-caliente-700 transition-colors">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" />
-            </svg>
-            Generar Horario
-          </button>
-        </div>
-      </div>
-
-      <!-- View mode tabs + Week navigation -->
-      <div class="flex items-center justify-between mb-4">
-        <div class="flex gap-1 bg-arena-100 rounded-lg p-0.5">
+        <div class="inline-flex items-center rounded-lg border border-arena-200 overflow-hidden">
           <button
-            v-for="mode in viewModes"
+            v-for="mode in [{ key: 'day', label: 'Día' }, { key: 'week', label: 'Semana' }, { key: 'month', label: 'Mes' }]"
             :key="mode.key"
             @click="viewMode = mode.key"
-            class="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
-            :class="viewMode === mode.key
-              ? 'bg-white text-arena-900 shadow-sm'
-              : 'text-arena-500 hover:text-arena-700'"
+            class="px-4 py-2 text-sm font-medium transition-colors"
+            :class="viewMode === mode.key ? 'bg-caliente-600 text-white' : 'bg-white text-arena-600 hover:bg-arena-50'"
+          >{{ mode.label }}</button>
+        </div>
+
+        <div class="inline-flex items-center gap-1">
+          <button
+            @click="scopeMode = 'team'"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            :class="scopeMode === 'team' ? 'bg-caliente-600 text-white' : 'bg-white border border-arena-200 text-arena-600 hover:bg-arena-50'"
           >
-            {{ mode.label }}
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
+            </svg>
+            Equipo
+          </button>
+          <button
+            @click="scopeMode = 'my'"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            :class="scopeMode === 'my' ? 'bg-caliente-600 text-white' : 'bg-white border border-arena-200 text-arena-600 hover:bg-arena-50'"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+            </svg>
+            Mi Horario
           </button>
         </div>
 
-        <div class="flex items-center gap-2">
-          <button
-            @click="goToToday"
-            class="px-2.5 py-1.5 rounded-md border border-arena-200 text-xs font-medium text-arena-600 hover:bg-arena-100 transition-colors"
-          >
-            Hoy
+        <div class="flex-1"></div>
+
+        <!-- Week navigation -->
+        <div class="inline-flex items-center gap-2">
+          <button @click="goToToday" class="px-3 py-2 rounded-lg border border-arena-200 text-sm font-medium text-arena-600 bg-white hover:bg-arena-50 transition-colors">Hoy</button>
+          <button @click="navigateWeek(-1)" class="p-2 rounded-lg border border-arena-200 text-arena-500 bg-white hover:bg-arena-50 transition-colors">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
           </button>
-          <button
-            @click="navigateWeek(-1)"
-            class="p-1.5 rounded-md border border-arena-200 text-arena-500 hover:bg-arena-100 transition-colors"
-          >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-            </svg>
-          </button>
-          <button
-            @click="navigateWeek(1)"
-            class="p-1.5 rounded-md border border-arena-200 text-arena-500 hover:bg-arena-100 transition-colors"
-          >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-            </svg>
+          <button @click="navigateWeek(1)" class="p-2 rounded-lg border border-arena-200 text-arena-500 bg-white hover:bg-arena-50 transition-colors">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
           </button>
         </div>
       </div>
 
-      <!-- Schedule Grid -->
-      <div class="bg-white border border-arena-200 rounded-lg overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full min-w-[800px]">
-            <thead>
-              <tr class="border-b border-arena-200">
-                <th class="sticky left-0 z-10 bg-white w-[200px] min-w-[200px] px-4 py-3 text-left text-xs font-semibold text-arena-500 uppercase tracking-wider border-r border-arena-100">
-                  Empleado
-                </th>
-                <th
-                  v-for="(day, idx) in weekDays"
-                  :key="idx"
-                  class="px-2 py-3 text-center min-w-[110px]"
-                  :class="day.isWeekend ? 'bg-arena-50/50' : ''"
-                >
-                  <div class="text-xs font-medium text-arena-400">{{ day.name }}</div>
-                  <div
-                    class="text-sm font-semibold mt-0.5 inline-flex items-center justify-center"
-                    :class="day.isToday
-                      ? 'w-7 h-7 rounded-full bg-caliente-600 text-white'
-                      : 'text-arena-700'"
+      <!-- ── TEAM GRID VIEW ── -->
+      <template v-if="scopeMode === 'team'">
+        <div class="bg-white border border-arena-200 rounded-xl overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[860px]">
+              <thead>
+                <tr class="border-b border-arena-200">
+                  <th class="sticky left-0 z-10 bg-white w-[200px] min-w-[200px] px-5 py-4 text-left text-xs font-semibold text-arena-400 uppercase tracking-wider border-r border-arena-100">
+                    Empleado
+                  </th>
+                  <th
+                    v-for="(day, idx) in weekDays" :key="idx"
+                    class="px-2 py-4 text-center min-w-[110px]"
+                    :class="day.isWeekend ? 'bg-arena-50/50' : ''"
                   >
-                    {{ day.date }}
-                  </div>
-                </th>
-              </tr>
-            </thead>
+                    <div class="text-xs font-semibold text-arena-400 uppercase">{{ day.name }}</div>
+                    <div
+                      class="text-sm font-bold mt-1 inline-flex items-center justify-center"
+                      :class="day.isToday ? 'w-7 h-7 rounded-full bg-caliente-600 text-white' : 'text-arena-700'"
+                    >{{ day.date }}</div>
+                    <div class="text-[10px] text-arena-400 capitalize mt-0.5">{{ day.month }}</div>
+                  </th>
+                </tr>
+              </thead>
 
-            <tbody class="divide-y divide-arena-100">
-              <tr
-                v-for="employee in allEmployees"
-                :key="employee.id"
-                class="group hover:bg-arena-50/50 transition-colors"
-              >
-                <td class="sticky left-0 z-10 bg-white group-hover:bg-arena-50/50 transition-colors px-4 py-2.5 border-r border-arena-100">
-                  <div class="flex items-center gap-2.5">
-                    <div class="w-7 h-7 rounded-full bg-arena-100 flex items-center justify-center shrink-0">
-                      <span class="text-xs font-medium text-arena-500">{{ employee.name.charAt(0) }}</span>
-                    </div>
-                    <div class="min-w-0">
-                      <p class="text-sm font-medium text-arena-900 truncate">{{ employee.name }}</p>
-                      <div class="flex items-center gap-1.5 mt-0.5">
-                        <span
-                          class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none"
-                          :class="getRoleBadge(employee.role).class"
-                        >
-                          {{ getRoleBadge(employee.role).label }}
-                        </span>
-                        <span class="text-[11px] text-arena-400">{{ employee.team }}</span>
+              <tbody class="divide-y divide-arena-100">
+                <tr
+                  v-for="employee in gridEmployees" :key="employee.uuid"
+                  class="group hover:bg-arena-50/30 transition-colors"
+                >
+                  <td class="sticky left-0 z-10 bg-white group-hover:bg-arena-50/30 transition-colors px-5 py-3 border-r border-arena-100">
+                    <div class="flex items-center gap-3">
+                      <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                        :class="employee.isMonitorTrader ? 'bg-blue-50 text-blue-700' : employee.isInplayTrader ? 'bg-emerald-50 text-emerald-700' : 'bg-arena-100 text-arena-500'"
+                      >{{ employee.initials }}</div>
+                      <div class="min-w-0">
+                        <p class="text-sm font-semibold text-arena-900 truncate">{{ employee.fullName }}</p>
+                        <p class="text-xs text-arena-400 mt-0.5">{{ employee.roleLabel }}</p>
                       </div>
                     </div>
-                  </div>
-                </td>
+                  </td>
 
-                <td
-                  v-for="(day, dayIdx) in weekDays"
-                  :key="dayIdx"
-                  class="px-1.5 py-1.5 text-center"
-                  :class="day.isWeekend ? 'bg-arena-50/50' : ''"
-                >
-                  <button
-                    v-if="getShift(employee.id, dayIdx)"
-                    class="w-full px-2 py-1.5 rounded-md border text-xs font-semibold transition-all duration-100 hover:scale-[1.03] hover:shadow-sm cursor-pointer"
+                  <td
+                    v-for="(day, dayIdx) in weekDays" :key="dayIdx"
+                    class="shift-cell px-1.5 py-1.5 text-center cursor-pointer select-none transition-colors"
                     :class="[
-                      getShiftStyle(getShift(employee.id, dayIdx)).bg,
-                      getShiftStyle(getShift(employee.id, dayIdx)).text,
-                      getShiftStyle(getShift(employee.id, dayIdx)).border,
+                      day.isWeekend ? 'bg-arena-50/50' : '',
+                      editingCell?.empUuid === employee.uuid && editingCell?.dayIndex === dayIdx ? 'ring-2 ring-caliente-400 ring-inset' : ''
                     ]"
-                    :title="`${getShift(employee.id, dayIdx)} — ${getShiftStyle(getShift(employee.id, dayIdx)).label}`"
+                    @click="handleCellClick(employee, dayIdx, $event)"
+                    @contextmenu="handleCellRightClick(employee, dayIdx, $event)"
+                    @mouseenter="handleCellMouseEnter(employee, dayIdx, $event)"
+                    @mouseleave="handleCellMouseLeave"
                   >
-                    {{ getShift(employee.id, dayIdx) }}
-                  </button>
-                  <div v-else class="w-full px-2 py-1.5 text-xs text-arena-300">—</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+                    <div
+                      v-if="getShift(employee.uuid, day.dateStr)"
+                      class="rounded-lg border px-2 py-2.5 transition-all"
+                      :class="[
+                        getShiftInfo(getShift(employee.uuid, day.dateStr)).bg,
+                        getShiftInfo(getShift(employee.uuid, day.dateStr)).text,
+                        getShiftInfo(getShift(employee.uuid, day.dateStr)).border,
+                        flashingCell === `${employee.uuid}-${dayIdx}` ? 'scale-105 shadow-md' : 'hover:scale-[1.02] hover:shadow-sm',
+                      ]"
+                    >
+                      <div class="text-xs font-bold leading-tight">{{ getShift(employee.uuid, day.dateStr) }}</div>
+                      <div class="text-[10px] opacity-75 mt-0.5">{{ getShiftInfo(getShift(employee.uuid, day.dateStr)).time }}</div>
+                    </div>
 
-        <!-- Coverage footer -->
-        <div class="border-t border-arena-200 bg-arena-50/50">
-          <div class="overflow-x-auto">
-            <table class="w-full min-w-[800px]">
-              <tr>
-                <td class="sticky left-0 z-10 bg-arena-50/50 w-[200px] min-w-[200px] px-4 py-2 border-r border-arena-100">
-                  <span class="text-[11px] font-semibold text-arena-400 uppercase tracking-wider">Cobertura</span>
-                </td>
-                <td
-                  v-for="(stats, idx) in coverageStats"
-                  :key="idx"
-                  class="px-2 py-2 text-center"
-                >
-                  <div class="flex items-center justify-center gap-1.5">
-                    <span class="text-[10px] font-medium" :class="stats.am >= 3 ? 'text-success-500' : 'text-caliente-600'">
-                      AM:{{ stats.am }}
-                    </span>
-                    <span class="text-arena-300">·</span>
-                    <span class="text-[10px] font-medium text-arena-400">
-                      INS:{{ stats.ins }}
-                    </span>
-                    <span class="text-arena-300">·</span>
-                    <span class="text-[10px] font-medium" :class="stats.mid >= 3 ? 'text-success-500' : 'text-caliente-600'">
-                      MID:{{ stats.mid }}
-                    </span>
-                  </div>
-                </td>
-              </tr>
+                    <div
+                      v-else
+                      class="rounded-lg border border-dashed h-[52px] flex items-center justify-center transition-all"
+                      :class="flashingCell === `${employee.uuid}-${dayIdx}` ? 'border-caliente-300 bg-caliente-50/30' : 'border-transparent hover:border-arena-300'"
+                    >
+                      <svg class="w-4 h-4 text-arena-300 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                      </svg>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
             </table>
           </div>
-        </div>
-      </div>
 
-      <!-- Shift legend -->
-      <div class="mt-4 flex flex-wrap gap-3">
-        <div
-          v-for="(style, code) in shiftColors"
-          :key="code"
-          class="flex items-center gap-1.5"
-        >
-          <span
-            class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border"
-            :class="[style.bg, style.text, style.border]"
-          >
-            {{ code }}
-          </span>
-          <span class="text-[11px] text-arena-400">{{ style.label }}</span>
+          <!-- Coverage footer -->
+          <div class="border-t border-arena-200 bg-arena-50/60">
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[860px]">
+                <tbody>
+                  <tr>
+                    <td class="sticky left-0 z-10 bg-arena-50/60 w-[200px] min-w-[200px] px-5 py-2.5 border-r border-arena-100">
+                      <span class="text-[11px] font-semibold text-arena-400 uppercase tracking-wider">Cobertura</span>
+                    </td>
+                    <td v-for="(stats, idx) in coverageStats" :key="idx" class="px-2 py-2.5 text-center">
+                      <div class="flex items-center justify-center gap-1.5">
+                        <template v-for="(cat, catIdx) in coverageCats" :key="cat.code">
+                          <span
+                            class="text-[10px] font-semibold"
+                            :class="(stats[cat.code]?.count || 0) >= (stats[cat.code]?.min || 0) ? 'text-success-500' : 'text-caliente-600'"
+                          >{{ cat.code }}:{{ stats[cat.code]?.count || 0 }}</span>
+                          <span v-if="catIdx < coverageCats.length - 1" class="text-arena-300">·</span>
+                        </template>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+
+        <!-- Shift legend -->
+        <div class="mt-4 flex flex-wrap gap-3">
+          <div v-for="shift in apiShiftTypes.filter(s => s.isActive)" :key="shift.code" class="flex items-center gap-1.5">
+            <span
+              class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border"
+              :class="[getShiftInfo(shift.code).bg, getShiftInfo(shift.code).text, getShiftInfo(shift.code).border]"
+            >{{ shift.code }}</span>
+            <span class="text-[11px] text-arena-400">{{ shift.timeRange || shift.name }}</span>
+          </div>
+        </div>
+
+        <!-- Keyboard shortcuts -->
+        <div class="mt-3 flex flex-wrap items-center gap-4 text-[10px] text-arena-400">
+          <span><kbd class="px-1 py-0.5 rounded border border-arena-200 bg-arena-50 font-mono text-arena-500">Clic</kbd> Ciclar turno</span>
+          <span><kbd class="px-1 py-0.5 rounded border border-arena-200 bg-arena-50 font-mono text-arena-500">Shift+Clic</kbd> Ciclar inverso</span>
+          <span><kbd class="px-1 py-0.5 rounded border border-arena-200 bg-arena-50 font-mono text-arena-500">Clic derecho</kbd> Menú de turnos</span>
+          <span><kbd class="px-1 py-0.5 rounded border border-arena-200 bg-arena-50 font-mono text-arena-500">Ctrl+Z</kbd> Deshacer</span>
+        </div>
+      </template>
+
+      <!-- ── MY SCHEDULE VIEW (admin personal) ── -->
+      <template v-else>
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-8">
+          <div
+            v-for="day in mySchedule" :key="day.dateStr"
+            class="bg-white border rounded-xl p-4 text-center transition-colors"
+            :class="day.isToday ? 'border-caliente-200 ring-1 ring-caliente-100' : 'border-arena-200'"
+          >
+            <p class="text-xs font-medium text-arena-400">{{ day.name }}</p>
+            <p class="text-lg font-bold mt-1" :class="day.isToday ? 'text-caliente-600' : 'text-arena-700'">{{ day.date }}</p>
+            <p class="text-[11px] text-arena-400 mb-3">{{ day.month }}</p>
+            <div class="inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-bold" :class="[day.shiftInfo.bg, day.shiftInfo.text, day.shiftInfo.border]">
+              {{ day.shiftCode }}
+            </div>
+            <p class="text-[10px] text-arena-400 mt-1.5">{{ day.shiftInfo.time }}</p>
+          </div>
+        </div>
+      </template>
+
+      <!-- ── HOVER TOOLTIP ── -->
+      <Teleport to="body">
+        <div
+          v-if="tooltipCell && !editingCell"
+          class="fixed z-40 pointer-events-none"
+          :style="{ top: tooltipPos.top + 'px', left: tooltipPos.left + 'px', transform: 'translateX(-50%)' }"
+        >
+          <div class="bg-arena-900 text-white text-[10px] font-medium px-2.5 py-1.5 rounded-md shadow-lg whitespace-nowrap">
+            <span>{{ getNextShiftPreview(tooltipCell.empUuid, tooltipCell.dayIndex).current || '—' }}</span>
+            <span class="text-arena-400 mx-1">→</span>
+            <span class="text-caliente-300">{{ getNextShiftPreview(tooltipCell.empUuid, tooltipCell.dayIndex).next }}</span>
+            <span class="text-arena-500 ml-1.5">(clic)</span>
+          </div>
+        </div>
+      </Teleport>
+
+      <!-- ── SHIFT PICKER POPOVER ── -->
+      <Teleport to="body">
+        <div v-if="editingCell" class="shift-picker-popover fixed z-50" :style="{ top: pickerPos.top + 'px', left: pickerPos.left + 'px' }">
+          <div class="w-[300px] bg-white rounded-xl border border-arena-200 shadow-lg overflow-hidden">
+            <div class="px-4 py-3 border-b border-arena-100 bg-arena-50/50">
+              <p class="text-xs font-semibold text-arena-700 uppercase tracking-wider">Asignar turno directo</p>
+              <p class="text-[10px] text-arena-400 mt-0.5">Clic derecho — bypass del ciclo</p>
+            </div>
+
+            <div class="p-3 max-h-[320px] overflow-y-auto space-y-3">
+              <div v-for="(group, catCode) in groupedShifts" :key="catCode">
+                <p class="text-[10px] font-bold text-arena-400 uppercase tracking-wider mb-1.5 px-1">{{ group.label }}</p>
+                <div class="grid grid-cols-2 gap-1.5">
+                  <button
+                    v-for="shift in group.shifts" :key="shift.code"
+                    @click="selectShift(shift.code)"
+                    class="flex flex-col items-start px-3 py-2 rounded-lg border text-left transition-all hover:scale-[1.02] hover:shadow-sm"
+                    :class="[getShiftInfo(shift.code).bg, getShiftInfo(shift.code).border]"
+                  >
+                    <span class="text-xs font-bold" :class="getShiftInfo(shift.code).text">{{ shift.code }}</span>
+                    <span class="text-[10px] opacity-70" :class="getShiftInfo(shift.code).text">{{ getShiftInfo(shift.code).time }}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="px-3 py-2.5 border-t border-arena-100 flex gap-2">
+              <button @click="removeShift" class="flex-1 px-3 py-1.5 rounded-lg border border-caliente-200 text-xs font-semibold text-caliente-600 bg-caliente-50 hover:bg-caliente-100 transition-colors">
+                Quitar turno
+              </button>
+              <button @click="closeShiftPicker" class="flex-1 px-3 py-1.5 rounded-lg border border-arena-200 text-xs font-semibold text-arena-500 hover:bg-arena-100 transition-colors">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      </Teleport>
     </template>
 
     <!-- ================================================================ -->
-    <!-- TRADER DASHBOARD — "Mi Horario"                                  -->
+    <!-- TRADER DASHBOARD                                                  -->
     <!-- ================================================================ -->
     <template v-else>
-      <!-- Welcome -->
       <div class="mb-6">
-        <h2 class="text-lg font-semibold text-arena-900">
-          Hola, {{ authStore.fullName }}
-        </h2>
-        <p class="text-sm text-arena-400 mt-0.5">
-          Aquí tienes tu horario de la semana · {{ weekLabel }}
-        </p>
+        <h2 class="text-lg font-semibold text-arena-900">Hola, {{ authStore.fullName }}</h2>
+        <p class="text-sm text-arena-400 mt-0.5">Aquí tienes tu horario de la semana · {{ weekLabel }}</p>
       </div>
 
-      <!-- Week nav -->
       <div class="flex items-center gap-2 mb-5">
-        <button
-          @click="goToToday"
-          class="px-2.5 py-1.5 rounded-md border border-arena-200 text-xs font-medium text-arena-600 hover:bg-arena-100 transition-colors"
-        >
-          Hoy
+        <button @click="goToToday" class="px-2.5 py-1.5 rounded-md border border-arena-200 text-xs font-medium text-arena-600 hover:bg-arena-100 transition-colors">Hoy</button>
+        <button @click="navigateWeek(-1)" class="p-1.5 rounded-md border border-arena-200 text-arena-500 hover:bg-arena-100 transition-colors">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
         </button>
-        <button
-          @click="navigateWeek(-1)"
-          class="p-1.5 rounded-md border border-arena-200 text-arena-500 hover:bg-arena-100 transition-colors"
-        >
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-          </svg>
-        </button>
-        <button
-          @click="navigateWeek(1)"
-          class="p-1.5 rounded-md border border-arena-200 text-arena-500 hover:bg-arena-100 transition-colors"
-        >
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-          </svg>
+        <button @click="navigateWeek(1)" class="p-1.5 rounded-md border border-arena-200 text-arena-500 hover:bg-arena-100 transition-colors">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
         </button>
       </div>
 
-      <!-- My schedule — day cards -->
       <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-8">
         <div
-          v-for="day in mySchedule"
-          :key="day.date"
+          v-for="day in mySchedule" :key="day.dateStr"
           class="bg-white border rounded-lg p-4 text-center transition-colors"
-          :class="day.isToday
-            ? 'border-caliente-200 ring-1 ring-caliente-100'
-            : 'border-arena-200'"
+          :class="day.isToday ? 'border-caliente-200 ring-1 ring-caliente-100' : 'border-arena-200'"
         >
           <p class="text-xs font-medium text-arena-400">{{ day.name }}</p>
-          <p
-            class="text-lg font-bold mt-1"
-            :class="day.isToday ? 'text-caliente-600' : 'text-arena-700'"
-          >
-            {{ day.date }}
-          </p>
+          <p class="text-lg font-bold mt-1" :class="day.isToday ? 'text-caliente-600' : 'text-arena-700'">{{ day.date }}</p>
           <p class="text-[11px] text-arena-400 mb-3">{{ day.month }}</p>
-
-          <div
-            class="inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-bold"
-            :class="[day.shiftStyle.bg, day.shiftStyle.text, day.shiftStyle.border]"
-          >
+          <div class="inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-bold" :class="[day.shiftInfo.bg, day.shiftInfo.text, day.shiftInfo.border]">
             {{ day.shiftCode }}
           </div>
-          <p class="text-[10px] text-arena-400 mt-1.5">
-            {{ shiftColors[day.shiftCode]?.label || '' }}
-          </p>
+          <p class="text-[10px] text-arena-400 mt-1.5">{{ day.shiftInfo.time }}</p>
         </div>
       </div>
 
-      <!-- Quick actions -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <router-link
-          to="/swap-requests"
-          class="flex items-center gap-4 bg-white border border-arena-200 rounded-lg px-5 py-4 hover:border-arena-300 transition-colors group"
-        >
+        <router-link to="/swap-requests" class="flex items-center gap-4 bg-white border border-arena-200 rounded-lg px-5 py-4 hover:border-arena-300 transition-colors group">
           <div class="w-10 h-10 rounded-full bg-caliente-50 flex items-center justify-center shrink-0">
             <svg class="w-5 h-5 text-caliente-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
@@ -457,10 +779,7 @@ const myNextShift = computed(() => {
           </div>
         </router-link>
 
-        <router-link
-          to="/vacations"
-          class="flex items-center gap-4 bg-white border border-arena-200 rounded-lg px-5 py-4 hover:border-arena-300 transition-colors group"
-        >
+        <router-link to="/vacations" class="flex items-center gap-4 bg-white border border-arena-200 rounded-lg px-5 py-4 hover:border-arena-300 transition-colors group">
           <div class="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center shrink-0">
             <svg class="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />

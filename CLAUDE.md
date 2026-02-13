@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Caliente is a sports betting operations management platform (scheduling, teams, traders). This is the **frontend** repo — a Vue 3 + Vite SPA that talks to a Django REST backend.
 
+**SRS Document**: `Enterprise_Scheduler_SRS_v1.1.pdf` (34 pages) defines all requirements. Key user stories: HU-001 to HU-008.
+
 ## Development Commands
 
 All commands must be run from `src/caliente/` (the Vue project root):
@@ -68,6 +70,52 @@ Pinia store using composition API. Tokens are stored in localStorage. On app ini
 
 The backend is a Django REST API at `VITE_API_BASE_URL` (default `http://localhost:8000/api/`). Resources include: auth, employees, leagues, schedules, shift types/categories/cycles, sport events, swap requests, system settings, teams, vacations.
 
+## System Modules (from SRS v1.1)
+
+| Module | Priority | Key Endpoints |
+|--------|----------|---------------|
+| AUTH | MUST | `/api/auth/login/`, `/api/auth/me/`, `/api/auth/token/refresh/` |
+| EMPLOYEES | MUST | `/api/employees/` (CRUD + filter by role/team) |
+| SHIFTS | MUST | `/api/shift-types/`, `/api/shift-categories/`, `/api/shift-cycle-config/` |
+| SCHEDULES | MUST | `/api/schedules/` (grid edit, weekly/monthly views, my-schedule) |
+| ALGORITHM | MUST | `/api/schedules/generate/` (one-click monthly generation) |
+| EVENTS | SHOULD | `/api/leagues/`, `/api/sport-events/` (priority 1-10 for algorithm) |
+| SWAP REQUESTS | SHOULD | `/api/swap-requests/` (peer accept → admin approve workflow) |
+| VACATIONS | SHOULD | `/api/vacations/` (request/approve, auto-mark VAC) |
+| SETTINGS | SHOULD | `/api/settings/system/` (singleton: max_consecutive_days, etc.) |
+
+## Grid Edit Paradigm (HU-005 — Core UX)
+
+The schedule dashboard uses **in-place grid editing** — no external forms:
+
+- **Left click** on cell: cycle to next shift in configured sequence
+- **Shift+Click**: cycle backward (inverse direction)
+- **Right click**: context menu with all available shifts
+- **Hover (500ms)**: tooltip showing current → next shift
+- **Ctrl+Click**: multi-select for bulk edit
+- **Ctrl+Z**: undo last change
+- **Auto-save**: after 2s inactivity or on cell blur
+- **Latency**: <200ms per click including validation
+
+### Default Cycle Sequences
+- Monitor Trader: `MON6 → MON12 → MON14 → OFF → (repeat)`
+- Inplay Trader: `IP6 → IP9 → IP10 → IP12 → IP14 → OFF → (repeat)`
+
+## Shift Types Reference
+
+| Code | Schedule | Category | Min Coverage |
+|------|----------|----------|-------------|
+| MON6 | 6:00-14:00 | AM | 3 traders (AM total) |
+| MON12 | 12:00-20:00 | INS | 0 |
+| MON14 | 14:00-22:00 | MID | 3 traders (MID total) |
+| IP6 | 6:00-14:00 | AM | (included in AM min) |
+| IP9 | 9:00-17:00 | INS | 0 |
+| IP10 | 10:00-18:00 | INS | 0 |
+| IP12 | 12:00-20:00 | INS | 0 |
+| IP14 | 14:00-22:00 | MID | (included in MID min) |
+| OFF | Libre | - | - |
+| VAC | Vacaciones | - | - |
+
 ## Key Conventions
 
 - **Path alias**: `@` maps to `src/caliente/src/` (configured in both vite.config.js and jsconfig.json).
@@ -77,3 +125,4 @@ The backend is a Django REST API at `VITE_API_BASE_URL` (default `http://localho
 - **Language**: Code comments and variable names mix Spanish and English. Backend error messages are in Spanish.
 - **API routes** always end with trailing slashes (Django convention).
 - **Node version**: ^20.19.0 || >=22.12.0.
+- **Design system**: Light theme, `arena-*` gray scale, `caliente-600` (#E30613) brand red, Inter font, borders-only depth.
