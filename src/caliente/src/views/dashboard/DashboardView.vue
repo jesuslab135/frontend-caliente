@@ -6,6 +6,7 @@ import { EmployeeRepository } from '@/domain/repositories/EmployeeRepository'
 import { ScheduleRepository } from '@/domain/repositories/ScheduleRepository'
 import { ShiftRepository } from '@/domain/repositories/ShiftRepository'
 import GenerateScheduleModal from '@/components/schedule/GenerateScheduleModal.vue'
+import { useGridSummary } from '@/composables/useGridSummary'
 
 const authStore = useAuthStore()
 const employeeRepo = new EmployeeRepository(httpClient)
@@ -420,6 +421,57 @@ const mySchedule = computed(() => {
   })
 })
 
+// ── Grid Summary (composable) ───────────────────────────
+const { summaryRows, getCellAlert } = useGridSummary(
+  gridEmployees, scheduleMap, weekDays, apiShiftTypes, shiftCategories
+)
+const showSummaryPanel = ref(true)
+
+// Category accent colors for left-border on summary rows
+const CAT_ACCENT = {
+  AM:  'border-l-blue-400',
+  INS: 'border-l-teal-400',
+  MID: 'border-l-indigo-400',
+  NS:  'border-l-slate-400',
+  HO:  'border-l-orange-400',
+}
+
+function getSummaryCellClasses(row, count) {
+  const alert = getCellAlert(row, count)
+  if (row.type === 'total') return 'bg-arena-900 text-white font-bold'
+  if (row.type === 'category') {
+    if (alert === 'danger') return 'bg-caliente-100/80 text-caliente-700 font-bold'
+    if (alert === 'warning') return 'bg-amber-100/80 text-amber-700 font-semibold'
+    return 'text-arena-800 font-semibold'
+  }
+  if (row.type === 'off') return count === 0 ? 'text-arena-300' : 'text-arena-500'
+  // shift
+  if (alert === 'low') return 'bg-caliente-50/60 text-caliente-300'
+  return 'text-arena-700'
+}
+
+function getSummaryLabelClasses(row) {
+  if (row.type === 'total') return 'bg-arena-900 text-white font-bold uppercase tracking-wider'
+  if (row.type === 'category') return 'text-arena-700 font-bold'
+  if (row.type === 'off') return 'text-arena-400 font-semibold'
+  return 'text-arena-500 font-medium'
+}
+
+function getSummaryRowBg(row) {
+  if (row.type === 'total') return 'bg-arena-900'
+  if (row.type === 'category') return 'bg-arena-100/50'
+  if (row.type === 'off') return 'bg-arena-50/80'
+  return ''
+}
+
+function getSummaryLeftAccent(row) {
+  if (row.type === 'shift' && row.categoryCode) return CAT_ACCENT[row.categoryCode] || 'border-l-arena-200'
+  if (row.type === 'category') return CAT_ACCENT[row.label] || 'border-l-arena-300'
+  if (row.type === 'total') return 'border-l-caliente-500'
+  if (row.type === 'off') return 'border-l-arena-300'
+  return 'border-l-transparent'
+}
+
 // ── Data fetching ───────────────────────────────────────
 function buildLookupMaps() {
   const empMap = {}
@@ -690,27 +742,81 @@ onUnmounted(() => {
             </table>
           </div>
 
-          <!-- Coverage footer -->
-          <div class="border-t border-arena-200 bg-arena-50/60">
-            <div class="overflow-x-auto">
+          <!-- ── Summary panel ── -->
+          <div class="border-t-2 border-arena-300">
+            <!-- Toggle bar -->
+            <button
+              @click="showSummaryPanel = !showSummaryPanel"
+              class="w-full flex items-center gap-2 px-5 py-2 bg-arena-100/80 hover:bg-arena-100 transition-colors text-left group"
+            >
+              <svg
+                class="w-3.5 h-3.5 text-arena-400 transition-transform duration-200"
+                :class="showSummaryPanel ? 'rotate-90' : ''"
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+              </svg>
+              <span class="text-[11px] font-bold text-arena-500 uppercase tracking-wider">Sumatorias</span>
+              <span class="text-[10px] text-arena-400 ml-1">{{ summaryRows.length }} filas</span>
+            </button>
+
+            <!-- Expandable summary table -->
+            <div v-show="showSummaryPanel" class="overflow-x-auto">
               <table class="w-full min-w-[860px]">
                 <tbody>
-                  <tr>
-                    <td class="sticky left-0 z-10 bg-arena-50/60 w-[200px] min-w-[200px] px-5 py-2.5 border-r border-arena-100">
-                      <span class="text-[11px] font-semibold text-arena-400 uppercase tracking-wider">Cobertura</span>
-                    </td>
-                    <td v-for="(stats, idx) in coverageStats" :key="idx" class="px-2 py-2.5 text-center">
-                      <div class="flex items-center justify-center gap-1.5">
-                        <template v-for="(cat, catIdx) in coverageCats" :key="cat.code">
+                  <template v-for="(row, rowIdx) in summaryRows" :key="row.key">
+                    <!-- Separator before OFF row -->
+                    <tr v-if="row.type === 'off'" class="h-0">
+                      <td :colspan="weekDays.length + 1" class="p-0">
+                        <div class="h-px bg-arena-300/60"></div>
+                      </td>
+                    </tr>
+                    <!-- Separator before first category row -->
+                    <tr v-if="row.type === 'category' && (rowIdx === 0 || summaryRows[rowIdx - 1]?.type !== 'category')" class="h-0">
+                      <td :colspan="weekDays.length + 1" class="p-0">
+                        <div class="h-px bg-arena-300/60"></div>
+                      </td>
+                    </tr>
+                    <!-- Separator before total row -->
+                    <tr v-if="row.type === 'total'" class="h-0">
+                      <td :colspan="weekDays.length + 1" class="p-0">
+                        <div class="h-0.5 bg-arena-400"></div>
+                      </td>
+                    </tr>
+
+                    <!-- Data row -->
+                    <tr :class="getSummaryRowBg(row)">
+                      <!-- Label cell (sticky) -->
+                      <td
+                        class="sticky left-0 z-10 w-[200px] min-w-[200px] px-5 py-1.5 border-r border-arena-100 border-l-[3px]"
+                        :class="[
+                          getSummaryLabelClasses(row),
+                          getSummaryLeftAccent(row),
+                          row.type === 'total' ? 'bg-arena-900' : row.type === 'category' ? 'bg-arena-100/50' : row.type === 'off' ? 'bg-arena-50/80' : 'bg-white',
+                        ]"
+                      >
+                        <div class="flex items-center gap-2">
+                          <span class="text-[11px] tabular-nums">{{ row.label }}</span>
                           <span
-                            class="text-[10px] font-semibold"
-                            :class="(stats[cat.code]?.count || 0) >= (stats[cat.code]?.min || 0) ? 'text-success-500' : 'text-caliente-600'"
-                          >{{ cat.code }}:{{ stats[cat.code]?.count || 0 }}</span>
-                          <span v-if="catIdx < coverageCats.length - 1" class="text-arena-300">&middot;</span>
-                        </template>
-                      </div>
-                    </td>
-                  </tr>
+                            v-if="row.type === 'category' && row.minRequired > 0"
+                            class="text-[9px] px-1 py-0.5 rounded bg-arena-200/60 text-arena-400 font-medium"
+                          >min {{ row.minRequired }}</span>
+                        </div>
+                      </td>
+
+                      <!-- Day count cells -->
+                      <td
+                        v-for="(count, dayIdx) in row.counts" :key="dayIdx"
+                        class="px-2 py-1.5 text-center min-w-[110px] tabular-nums text-xs"
+                        :class="[
+                          getSummaryCellClasses(row, count),
+                          weekDays[dayIdx]?.isWeekend && row.type !== 'total' ? 'opacity-75' : '',
+                        ]"
+                      >
+                        {{ count }}
+                      </td>
+                    </tr>
+                  </template>
                 </tbody>
               </table>
             </div>

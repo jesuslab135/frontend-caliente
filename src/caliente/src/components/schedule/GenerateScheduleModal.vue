@@ -147,7 +147,7 @@ function close() {
         </div>
 
         <!-- ── RESULTS STATE ── -->
-        <div v-else-if="step === 'results'" class="px-6 py-5 space-y-4">
+        <div v-else-if="step === 'results'" class="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
           <!-- Status badge -->
           <div class="flex items-center gap-2.5 px-4 py-3 rounded-lg border" :class="[statusConfig.bg, statusConfig.border]">
             <svg v-if="statusConfig.icon === 'check'" class="w-5 h-5" :class="statusConfig.text" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -185,19 +185,23 @@ function close() {
             </div>
           </div>
 
-          <!-- Warnings -->
+          <!-- Warnings (scrollable) -->
           <div v-if="generationResult.warnings?.length" class="space-y-1.5">
             <p class="text-[10px] font-semibold text-amber-600 uppercase tracking-wider">Advertencias ({{ generationResult.warnings.length }})</p>
-            <div v-for="(w, i) in generationResult.warnings" :key="i" class="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
-              <p class="text-xs text-amber-700">{{ w }}</p>
+            <div class="max-h-40 overflow-y-auto space-y-1 rounded-lg border border-amber-200 p-2 bg-amber-50/50">
+              <div v-for="(w, i) in generationResult.warnings" :key="i" class="px-2.5 py-1.5 rounded bg-amber-50 border border-amber-100">
+                <p class="text-xs text-amber-700">{{ w }}</p>
+              </div>
             </div>
           </div>
 
-          <!-- Errors -->
+          <!-- Errors (scrollable) -->
           <div v-if="generationResult.errors?.length" class="space-y-1.5">
             <p class="text-[10px] font-semibold text-caliente-600 uppercase tracking-wider">Errores ({{ generationResult.errors.length }})</p>
-            <div v-for="(e, i) in generationResult.errors" :key="i" class="px-3 py-2 rounded-lg bg-caliente-50 border border-caliente-200">
-              <p class="text-xs text-caliente-700">{{ e }}</p>
+            <div class="max-h-40 overflow-y-auto space-y-1 rounded-lg border border-caliente-200 p-2 bg-caliente-50/50">
+              <div v-for="(e, i) in generationResult.errors" :key="i" class="px-2.5 py-1.5 rounded bg-caliente-50 border border-caliente-100">
+                <p class="text-xs text-caliente-700">{{ e }}</p>
+              </div>
             </div>
           </div>
         </div>
