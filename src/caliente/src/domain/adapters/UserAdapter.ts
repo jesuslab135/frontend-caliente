@@ -13,7 +13,8 @@ export class UserAdapter {
             profile?.role ?? 'MONITOR_TRADER',
             profile?.phone ?? '',
             null,
-            profile?.is_active ?? dto.is_active ?? true
+            profile?.is_active ?? dto.is_active ?? true,
+            profile?.uuid ?? ''
         );
     }
 }

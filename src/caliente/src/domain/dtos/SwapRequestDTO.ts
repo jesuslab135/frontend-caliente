@@ -47,8 +47,8 @@ export interface SwapRequestDTO {
 
 /** Payload para crear una solicitud de intercambio */
 export interface SwapRequestWriteDTO {
-    target_employee: number;
-    requester_schedule: number;
-    target_schedule: number;
+    target_employee: string;   // UUID of the target employee
+    requester_date: string;    // YYYY-MM-DD
+    target_date: string;       // YYYY-MM-DD
     reason?: string;
 }

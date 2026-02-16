@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { httpClient } from '@/di/http'
 import { SwapRequestRepository } from '@/domain/repositories/SwapRequestRepository'
@@ -62,8 +62,37 @@ function getEmployeeId(emp) {
 }
 
 function getScheduleInfo(sched) {
-  if (typeof sched === 'object' && sched) return sched.date
-  return '\u2014'
+  if (typeof sched === 'object' && sched) {
+    const shift = sched.shift_type
+    if (typeof shift === 'object' && shift) {
+      return { date: sched.date, code: shift.code, name: shift.name, start: shift.start_time, end: shift.end_time }
+    }
+    return { date: sched.date, code: null, name: null, start: null, end: null }
+  }
+  return null
+}
+
+function formatShiftTime(time) {
+  if (!time) return ''
+  return time.slice(0, 5) // "HH:MM:SS" → "HH:MM"
+}
+
+/** Color config for shift code badges */
+const SHIFT_COLORS = {
+  MON6:  { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200' },
+  MON12: { bg: 'bg-indigo-50',  text: 'text-indigo-700',  border: 'border-indigo-200' },
+  MON14: { bg: 'bg-violet-50',  text: 'text-violet-700',  border: 'border-violet-200' },
+  IP6:   { bg: 'bg-teal-50',    text: 'text-teal-700',    border: 'border-teal-200' },
+  IP9:   { bg: 'bg-cyan-50',    text: 'text-cyan-700',    border: 'border-cyan-200' },
+  IP10:  { bg: 'bg-sky-50',     text: 'text-sky-700',     border: 'border-sky-200' },
+  IP12:  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  IP14:  { bg: 'bg-green-50',   text: 'text-green-700',   border: 'border-green-200' },
+  OFF:   { bg: 'bg-arena-100',  text: 'text-arena-500',   border: 'border-arena-200' },
+  VAC:   { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200' },
+}
+
+function getShiftColor(code) {
+  return SHIFT_COLORS[code] || { bg: 'bg-arena-50', text: 'text-arena-600', border: 'border-arena-200' }
 }
 
 function formatDate(dateStr) {
@@ -225,7 +254,43 @@ function openCreateModal() {
 
 function closeCreateModal() {
   showCreateModal.value = false
+  requesterPreview.value = null
+  targetPreview.value = null
 }
+
+// ── Live schedule preview ─────────────────────────────
+const requesterPreview = ref(null)
+const targetPreview = ref(null)
+const requesterPreviewLoading = ref(false)
+const targetPreviewLoading = ref(false)
+
+async function lookupRequesterSchedule() {
+  const date = createForm.value.requester_date
+  const empUuid = authStore.user?.employeeUuid
+  if (!date || !empUuid) { requesterPreview.value = null; return }
+  requesterPreviewLoading.value = true
+  try {
+    requesterPreview.value = await swapRepo.lookupSchedule(empUuid, date)
+  } catch { requesterPreview.value = null }
+  finally { requesterPreviewLoading.value = false }
+}
+
+async function lookupTargetSchedule() {
+  const date = createForm.value.target_date
+  const empUuid = createForm.value.target_employee
+  if (!date || !empUuid) { targetPreview.value = null; return }
+  targetPreviewLoading.value = true
+  try {
+    targetPreview.value = await swapRepo.lookupSchedule(empUuid, date)
+  } catch { targetPreview.value = null }
+  finally { targetPreviewLoading.value = false }
+}
+
+watch(() => createForm.value.requester_date, lookupRequesterSchedule)
+watch(() => createForm.value.target_date, lookupTargetSchedule)
+watch(() => createForm.value.target_employee, () => {
+  if (createForm.value.target_date) lookupTargetSchedule()
+})
 
 async function submitCreateSwap() {
   createLoading.value = true
@@ -502,7 +567,17 @@ onMounted(async () => {
                   </td>
                   <!-- Turno Origen -->
                   <td class="px-4 py-3.5">
-                    <p class="text-sm text-arena-700">{{ getScheduleInfo(swap.requester_schedule) }}</p>
+                    <div v-if="swap.requester_schedule?.shift_type?.code" class="flex items-center gap-2">
+                      <span class="inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-bold leading-none"
+                        :class="[getShiftColor(swap.requester_schedule.shift_type.code).bg, getShiftColor(swap.requester_schedule.shift_type.code).text, getShiftColor(swap.requester_schedule.shift_type.code).border]">
+                        {{ swap.requester_schedule.shift_type.code }}
+                      </span>
+                      <div>
+                        <p class="text-xs font-medium text-arena-700">{{ formatShiftTime(swap.requester_schedule.shift_type.start_time) }}-{{ formatShiftTime(swap.requester_schedule.shift_type.end_time) }}</p>
+                        <p class="text-[11px] text-arena-400">{{ formatDate(swap.requester_schedule.date) }}</p>
+                      </div>
+                    </div>
+                    <span v-else class="text-sm text-arena-400">&mdash;</span>
                   </td>
                   <!-- Arrow -->
                   <td class="px-2 py-3.5 text-center">
@@ -514,7 +589,17 @@ onMounted(async () => {
                   </td>
                   <!-- Turno Destino -->
                   <td class="px-4 py-3.5">
-                    <p class="text-sm text-arena-700">{{ getScheduleInfo(swap.target_schedule) }}</p>
+                    <div v-if="swap.target_schedule?.shift_type?.code" class="flex items-center gap-2">
+                      <span class="inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-bold leading-none"
+                        :class="[getShiftColor(swap.target_schedule.shift_type.code).bg, getShiftColor(swap.target_schedule.shift_type.code).text, getShiftColor(swap.target_schedule.shift_type.code).border]">
+                        {{ swap.target_schedule.shift_type.code }}
+                      </span>
+                      <div>
+                        <p class="text-xs font-medium text-arena-700">{{ formatShiftTime(swap.target_schedule.shift_type.start_time) }}-{{ formatShiftTime(swap.target_schedule.shift_type.end_time) }}</p>
+                        <p class="text-[11px] text-arena-400">{{ formatDate(swap.target_schedule.date) }}</p>
+                      </div>
+                    </div>
+                    <span v-else class="text-sm text-arena-400">&mdash;</span>
                   </td>
                   <!-- Estado -->
                   <td class="px-4 py-3.5 text-center">
@@ -644,13 +729,33 @@ onMounted(async () => {
                     <p class="text-sm font-semibold text-arena-900">{{ getEmployeeName(swap.target_employee) }}</p>
                   </td>
                   <td class="px-4 py-3.5">
-                    <p class="text-sm text-arena-700">{{ getScheduleInfo(swap.requester_schedule) }}</p>
+                    <div v-if="swap.requester_schedule?.shift_type?.code" class="flex items-center gap-2">
+                      <span class="inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-bold leading-none"
+                        :class="[getShiftColor(swap.requester_schedule.shift_type.code).bg, getShiftColor(swap.requester_schedule.shift_type.code).text, getShiftColor(swap.requester_schedule.shift_type.code).border]">
+                        {{ swap.requester_schedule.shift_type.code }}
+                      </span>
+                      <div>
+                        <p class="text-xs font-medium text-arena-700">{{ formatShiftTime(swap.requester_schedule.shift_type.start_time) }}-{{ formatShiftTime(swap.requester_schedule.shift_type.end_time) }}</p>
+                        <p class="text-[11px] text-arena-400">{{ formatDate(swap.requester_schedule.date) }}</p>
+                      </div>
+                    </div>
+                    <span v-else class="text-sm text-arena-400">&mdash;</span>
                   </td>
                   <td class="px-2 py-3.5 text-center">
                     <span class="text-arena-400 text-lg">&harr;</span>
                   </td>
                   <td class="px-4 py-3.5">
-                    <p class="text-sm text-arena-700">{{ getScheduleInfo(swap.target_schedule) }}</p>
+                    <div v-if="swap.target_schedule?.shift_type?.code" class="flex items-center gap-2">
+                      <span class="inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-bold leading-none"
+                        :class="[getShiftColor(swap.target_schedule.shift_type.code).bg, getShiftColor(swap.target_schedule.shift_type.code).text, getShiftColor(swap.target_schedule.shift_type.code).border]">
+                        {{ swap.target_schedule.shift_type.code }}
+                      </span>
+                      <div>
+                        <p class="text-xs font-medium text-arena-700">{{ formatShiftTime(swap.target_schedule.shift_type.start_time) }}-{{ formatShiftTime(swap.target_schedule.shift_type.end_time) }}</p>
+                        <p class="text-[11px] text-arena-400">{{ formatDate(swap.target_schedule.date) }}</p>
+                      </div>
+                    </div>
+                    <span v-else class="text-sm text-arena-400">&mdash;</span>
                   </td>
                   <td class="px-4 py-3.5 text-center">
                     <span
@@ -710,13 +815,33 @@ onMounted(async () => {
                     <p class="text-sm font-semibold text-arena-900">{{ getEmployeeName(swap.requester) }}</p>
                   </td>
                   <td class="px-4 py-3.5">
-                    <p class="text-sm text-arena-700">{{ getScheduleInfo(swap.requester_schedule) }}</p>
+                    <div v-if="swap.requester_schedule?.shift_type?.code" class="flex items-center gap-2">
+                      <span class="inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-bold leading-none"
+                        :class="[getShiftColor(swap.requester_schedule.shift_type.code).bg, getShiftColor(swap.requester_schedule.shift_type.code).text, getShiftColor(swap.requester_schedule.shift_type.code).border]">
+                        {{ swap.requester_schedule.shift_type.code }}
+                      </span>
+                      <div>
+                        <p class="text-xs font-medium text-arena-700">{{ formatShiftTime(swap.requester_schedule.shift_type.start_time) }}-{{ formatShiftTime(swap.requester_schedule.shift_type.end_time) }}</p>
+                        <p class="text-[11px] text-arena-400">{{ formatDate(swap.requester_schedule.date) }}</p>
+                      </div>
+                    </div>
+                    <span v-else class="text-sm text-arena-400">&mdash;</span>
                   </td>
                   <td class="px-2 py-3.5 text-center">
                     <span class="text-arena-400 text-lg">&harr;</span>
                   </td>
                   <td class="px-4 py-3.5">
-                    <p class="text-sm text-arena-700">{{ getScheduleInfo(swap.target_schedule) }}</p>
+                    <div v-if="swap.target_schedule?.shift_type?.code" class="flex items-center gap-2">
+                      <span class="inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-bold leading-none"
+                        :class="[getShiftColor(swap.target_schedule.shift_type.code).bg, getShiftColor(swap.target_schedule.shift_type.code).text, getShiftColor(swap.target_schedule.shift_type.code).border]">
+                        {{ swap.target_schedule.shift_type.code }}
+                      </span>
+                      <div>
+                        <p class="text-xs font-medium text-arena-700">{{ formatShiftTime(swap.target_schedule.shift_type.start_time) }}-{{ formatShiftTime(swap.target_schedule.shift_type.end_time) }}</p>
+                        <p class="text-[11px] text-arena-400">{{ formatDate(swap.target_schedule.date) }}</p>
+                      </div>
+                    </div>
+                    <span v-else class="text-sm text-arena-400">&mdash;</span>
                   </td>
                   <td class="px-4 py-3.5 text-center">
                     <span
@@ -776,14 +901,22 @@ onMounted(async () => {
           <!-- Form -->
           <form @submit.prevent="submitAdminAction" class="px-6 py-5 space-y-4">
             <!-- Swap details summary -->
-            <div class="bg-arena-50 rounded-lg px-4 py-3 space-y-2">
+            <div class="bg-arena-50 rounded-lg px-4 py-3 space-y-3">
               <div class="flex items-center justify-between text-sm">
                 <span class="text-arena-500">Solicitante</span>
                 <span class="font-medium text-arena-900">{{ getEmployeeName(adminModalSwap?.requester) }}</span>
               </div>
               <div class="flex items-center justify-between text-sm">
                 <span class="text-arena-500">Turno origen</span>
-                <span class="font-medium text-arena-700">{{ getScheduleInfo(adminModalSwap?.requester_schedule) }}</span>
+                <div v-if="adminModalSwap?.requester_schedule?.shift_type?.code" class="flex items-center gap-2">
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-bold leading-none"
+                    :class="[getShiftColor(adminModalSwap.requester_schedule.shift_type.code).bg, getShiftColor(adminModalSwap.requester_schedule.shift_type.code).text, getShiftColor(adminModalSwap.requester_schedule.shift_type.code).border]">
+                    {{ adminModalSwap.requester_schedule.shift_type.code }}
+                  </span>
+                  <span class="text-xs text-arena-600">{{ formatShiftTime(adminModalSwap.requester_schedule.shift_type.start_time) }}-{{ formatShiftTime(adminModalSwap.requester_schedule.shift_type.end_time) }}</span>
+                  <span class="text-[11px] text-arena-400">{{ formatDate(adminModalSwap.requester_schedule.date) }}</span>
+                </div>
+                <span v-else class="font-medium text-arena-400">&mdash;</span>
               </div>
               <div class="flex items-center justify-between text-sm">
                 <span class="text-arena-500">Companero</span>
@@ -791,7 +924,15 @@ onMounted(async () => {
               </div>
               <div class="flex items-center justify-between text-sm">
                 <span class="text-arena-500">Turno destino</span>
-                <span class="font-medium text-arena-700">{{ getScheduleInfo(adminModalSwap?.target_schedule) }}</span>
+                <div v-if="adminModalSwap?.target_schedule?.shift_type?.code" class="flex items-center gap-2">
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-bold leading-none"
+                    :class="[getShiftColor(adminModalSwap.target_schedule.shift_type.code).bg, getShiftColor(adminModalSwap.target_schedule.shift_type.code).text, getShiftColor(adminModalSwap.target_schedule.shift_type.code).border]">
+                    {{ adminModalSwap.target_schedule.shift_type.code }}
+                  </span>
+                  <span class="text-xs text-arena-600">{{ formatShiftTime(adminModalSwap.target_schedule.shift_type.start_time) }}-{{ formatShiftTime(adminModalSwap.target_schedule.shift_type.end_time) }}</span>
+                  <span class="text-[11px] text-arena-400">{{ formatDate(adminModalSwap.target_schedule.date) }}</span>
+                </div>
+                <span v-else class="font-medium text-arena-400">&mdash;</span>
               </div>
             </div>
 
@@ -894,6 +1035,43 @@ onMounted(async () => {
               </div>
             </div>
 
+            <!-- Live shift preview -->
+            <div v-if="requesterPreview || targetPreview || requesterPreviewLoading || targetPreviewLoading"
+              class="grid grid-cols-2 gap-3">
+              <!-- Requester shift -->
+              <div class="bg-arena-50 rounded-lg px-3 py-2.5 border border-arena-100">
+                <p class="text-[10px] font-semibold text-arena-400 uppercase tracking-wider mb-1.5">Mi turno</p>
+                <div v-if="requesterPreviewLoading" class="flex items-center gap-2">
+                  <div class="w-3 h-3 border-2 border-arena-300 border-t-caliente-500 rounded-full animate-spin"></div>
+                  <span class="text-xs text-arena-400">Buscando...</span>
+                </div>
+                <template v-else-if="requesterPreview?.shift_type">
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-bold leading-none"
+                    :class="[getShiftColor(requesterPreview.shift_type.code).bg, getShiftColor(requesterPreview.shift_type.code).text, getShiftColor(requesterPreview.shift_type.code).border]">
+                    {{ requesterPreview.shift_type.code }}
+                  </span>
+                  <p class="text-xs text-arena-600 mt-1">{{ formatShiftTime(requesterPreview.shift_type.start_time) }} - {{ formatShiftTime(requesterPreview.shift_type.end_time) }}</p>
+                </template>
+                <p v-else-if="createForm.requester_date" class="text-xs text-arena-400 italic">Sin turno asignado</p>
+              </div>
+              <!-- Target shift -->
+              <div class="bg-arena-50 rounded-lg px-3 py-2.5 border border-arena-100">
+                <p class="text-[10px] font-semibold text-arena-400 uppercase tracking-wider mb-1.5">Su turno</p>
+                <div v-if="targetPreviewLoading" class="flex items-center gap-2">
+                  <div class="w-3 h-3 border-2 border-arena-300 border-t-caliente-500 rounded-full animate-spin"></div>
+                  <span class="text-xs text-arena-400">Buscando...</span>
+                </div>
+                <template v-else-if="targetPreview?.shift_type">
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-bold leading-none"
+                    :class="[getShiftColor(targetPreview.shift_type.code).bg, getShiftColor(targetPreview.shift_type.code).text, getShiftColor(targetPreview.shift_type.code).border]">
+                    {{ targetPreview.shift_type.code }}
+                  </span>
+                  <p class="text-xs text-arena-600 mt-1">{{ formatShiftTime(targetPreview.shift_type.start_time) }} - {{ formatShiftTime(targetPreview.shift_type.end_time) }}</p>
+                </template>
+                <p v-else-if="createForm.target_date && createForm.target_employee" class="text-xs text-arena-400 italic">Sin turno asignado</p>
+              </div>
+            </div>
+
             <!-- Reason -->
             <div>
               <label class="block text-[11px] font-semibold text-arena-500 uppercase tracking-wider mb-1.5">Motivo</label>
@@ -954,18 +1132,34 @@ onMounted(async () => {
           <!-- Form -->
           <form @submit.prevent="submitRespond" class="px-6 py-5 space-y-4">
             <!-- Swap details -->
-            <div class="bg-arena-50 rounded-lg px-4 py-3 space-y-2">
+            <div class="bg-arena-50 rounded-lg px-4 py-3 space-y-3">
               <div class="flex items-center justify-between text-sm">
                 <span class="text-arena-500">Solicitante</span>
                 <span class="font-medium text-arena-900">{{ getEmployeeName(respondSwap?.requester) }}</span>
               </div>
               <div class="flex items-center justify-between text-sm">
                 <span class="text-arena-500">Su turno</span>
-                <span class="font-medium text-arena-700">{{ getScheduleInfo(respondSwap?.requester_schedule) }}</span>
+                <div v-if="respondSwap?.requester_schedule?.shift_type?.code" class="flex items-center gap-2">
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-bold leading-none"
+                    :class="[getShiftColor(respondSwap.requester_schedule.shift_type.code).bg, getShiftColor(respondSwap.requester_schedule.shift_type.code).text, getShiftColor(respondSwap.requester_schedule.shift_type.code).border]">
+                    {{ respondSwap.requester_schedule.shift_type.code }}
+                  </span>
+                  <span class="text-xs text-arena-600">{{ formatShiftTime(respondSwap.requester_schedule.shift_type.start_time) }}-{{ formatShiftTime(respondSwap.requester_schedule.shift_type.end_time) }}</span>
+                  <span class="text-[11px] text-arena-400">{{ formatDate(respondSwap.requester_schedule.date) }}</span>
+                </div>
+                <span v-else class="font-medium text-arena-400">&mdash;</span>
               </div>
               <div class="flex items-center justify-between text-sm">
                 <span class="text-arena-500">Tu turno</span>
-                <span class="font-medium text-arena-700">{{ getScheduleInfo(respondSwap?.target_schedule) }}</span>
+                <div v-if="respondSwap?.target_schedule?.shift_type?.code" class="flex items-center gap-2">
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-bold leading-none"
+                    :class="[getShiftColor(respondSwap.target_schedule.shift_type.code).bg, getShiftColor(respondSwap.target_schedule.shift_type.code).text, getShiftColor(respondSwap.target_schedule.shift_type.code).border]">
+                    {{ respondSwap.target_schedule.shift_type.code }}
+                  </span>
+                  <span class="text-xs text-arena-600">{{ formatShiftTime(respondSwap.target_schedule.shift_type.start_time) }}-{{ formatShiftTime(respondSwap.target_schedule.shift_type.end_time) }}</span>
+                  <span class="text-[11px] text-arena-400">{{ formatDate(respondSwap.target_schedule.date) }}</span>
+                </div>
+                <span v-else class="font-medium text-arena-400">&mdash;</span>
               </div>
               <div v-if="respondSwap?.reason" class="pt-2 border-t border-arena-200">
                 <p class="text-[11px] font-semibold text-arena-400 uppercase tracking-wider mb-1">Motivo</p>

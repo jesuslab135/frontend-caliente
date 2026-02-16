@@ -6,6 +6,7 @@ const AppLayout = () => import('@/layouts/AppLayout.vue')
 const DashboardView = () => import('@/views/dashboard/DashboardView.vue')
 const EmployeesView = () => import('@/views/employees/EmployeesView.vue')
 const EventsView = () => import('@/views/events/EventsView.vue')
+const LeaguesView = () => import('@/views/leagues/LeaguesView.vue')
 const SwapRequestsView = () => import('@/views/swaps/SwapRequestsView.vue')
 const VacationsView = () => import('@/views/vacations/VacationsView.vue')
 const SettingsView = () => import('@/views/settings/SettingsView.vue')
@@ -51,6 +52,11 @@ const routes = [
         path: 'events',
         name: 'Events',
         component: EventsView,
+      },
+      {
+        path: 'leagues',
+        name: 'Leagues',
+        component: LeaguesView,
       },
       {
         path: 'swap-requests',

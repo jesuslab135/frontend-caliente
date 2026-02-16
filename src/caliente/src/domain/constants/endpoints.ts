@@ -15,6 +15,7 @@ export const API_ROUTES = {
     },
     LEAGUES: {
         BASE: 'leagues/',
+        IMPORT: 'leagues/import/',
     },
     SCHEDULE_GENERATIONS_LOGS: {
         BASE: 'schedulegenerationlogs/',
@@ -34,9 +35,11 @@ export const API_ROUTES = {
     },
     SPORT_EVENTS: {
         BASE: 'sportevents/',
+        IMPORT: 'sportevents/import/',
     },
     SWAP_REQUESTS: {
         BASE: 'swaprequests/',
+        LOOKUP_SCHEDULE: 'swaprequests/lookup-schedule/',
     },
     SYSTEM_SETTINGS: {
         BASE: 'systemsettingss/',

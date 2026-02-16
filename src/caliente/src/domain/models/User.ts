@@ -10,7 +10,8 @@ export class User {
         private _role: UserRoleDTO,
         public phone: string = '',
         public teamId: number | null = null,
-        public isActive: boolean = true
+        public isActive: boolean = true,
+        public readonly employeeUuid: string = ''
     ) {}
 
     get role(): UserRoleDTO {
@@ -64,6 +65,7 @@ export class User {
             phone: this.phone,
             teamId: this.teamId,
             isActive: this.isActive,
+            employeeUuid: this.employeeUuid,
         };
     }
 
@@ -78,7 +80,8 @@ export class User {
             data.role || data._role,
             data.phone ?? '',
             data.teamId ?? null,
-            data.isActive ?? true
+            data.isActive ?? true,
+            data.employeeUuid ?? ''
         );
     }
 }

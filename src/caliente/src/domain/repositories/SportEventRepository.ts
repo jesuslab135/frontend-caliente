@@ -27,7 +27,7 @@ export class SportEventRepository {
 
     /** Import events from an Excel/CSV file */
     async importFile(formData: FormData): Promise<{ imported: number; errors: string[] }> {
-        return this.http.post(`${this.base}import/`, formData, {
+        return this.http.post(API_ROUTES.SPORT_EVENTS.IMPORT, formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
         });
     }

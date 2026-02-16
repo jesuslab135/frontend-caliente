@@ -28,4 +28,11 @@ export class SwapRequestRepository {
     async cancel(uuid: string): Promise<SwapRequestDTO> {
         return this.http.patch<SwapRequestDTO>(`${this.base}${uuid}/`, { status: 'CANCELLED' });
     }
+
+    /** Lookup schedule for an employee on a specific date */
+    async lookupSchedule(employeeUuid: string, date: string): Promise<any> {
+        return this.http.get(API_ROUTES.SWAP_REQUESTS.LOOKUP_SCHEDULE, {
+            params: { employee_uuid: employeeUuid, date },
+        });
+    }
 }

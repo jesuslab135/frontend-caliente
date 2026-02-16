@@ -22,4 +22,11 @@ export class LeagueRepository {
     async remove(uuid: string): Promise<void> {
         await this.http.delete(`${this.base}${uuid}/`);
     }
+
+    async importFile(formData: FormData): Promise<{ imported: number; errors: string[] }> {
+        return this.http.post<{ imported: number; errors: string[] }>(
+            API_ROUTES.LEAGUES.IMPORT, formData,
+            { headers: { 'Content-Type': 'multipart/form-data' } }
+        );
+    }
 }

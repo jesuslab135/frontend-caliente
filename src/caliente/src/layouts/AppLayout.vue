@@ -13,7 +13,8 @@ const mobileMenuOpen = ref(false)
 const allNavigation = [
   { name: 'Dashboard', path: '/dashboard', icon: 'grid', roles: null },
   { name: 'Empleados', path: '/employees', icon: 'users', roles: ['ADMIN', 'MANAGER'] },
-  { name: 'Eventos', path: '/events', icon: 'calendar', roles: ['ADMIN', 'MANAGER'] },
+  { name: 'Eventos', path: '/events', icon: 'calendar', roles: null },
+  { name: 'Ligas', path: '/leagues', icon: 'trophy', roles: null },
   { name: 'Intercambios', path: '/swap-requests', icon: 'swap', roles: null },
   { name: 'Vacaciones', path: '/vacations', icon: 'sun', roles: null },
   { name: 'Configuración', path: '/settings', icon: 'settings', roles: ['ADMIN'] },
@@ -84,6 +85,9 @@ async function handleLogout() {
           </svg>
           <svg v-else-if="item.icon === 'calendar'" class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+          </svg>
+          <svg v-else-if="item.icon === 'trophy'" class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 0 1 3 3h-15a3 3 0 0 1 3-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 0 1-.982-3.172M9.497 14.25a7.454 7.454 0 0 0 .981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 0 0 7.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M18.75 4.236c.982.143 1.954.317 2.916.52A6.003 6.003 0 0 1 16.27 9.728M18.75 4.236V4.5c0 2.108-.966 3.99-2.48 5.228m0 0a6.023 6.023 0 0 1-2.02 1.272m2.02-1.272a6.023 6.023 0 0 0 2.02 1.272" />
           </svg>
           <svg v-else-if="item.icon === 'swap'" class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
