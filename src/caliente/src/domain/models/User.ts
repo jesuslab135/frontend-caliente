@@ -26,7 +26,8 @@ export class User {
             'MONITOR_TRADER': 'Monitor Trader',
             'INPLAY_TRADER': 'In-Play Trader',
             'MANAGER': 'Supervisor',
-            'ADMIN': 'Administrador'
+            'ADMIN': 'Administrador',
+            'PREMATCH_TRADER': 'Pre-Match Trader'
         };
         return labels[this._role] || this._role;
     }

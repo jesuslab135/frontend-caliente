@@ -1,6 +1,12 @@
-export type EditSourceDTO = 'ALGORITHM' | 'GRID_EDIT' | 'BULK_IMPORT' | 'SWAP' | 'MANUAL';
+import type { EditSource } from '../types';
 
-/** GET /schedules/ — each cell in the schedule grid */
+/**
+ * Re-export del tipo canónico para backward compatibility.
+ * Fuente de verdad: types/statuses.ts
+ */
+export type EditSourceDTO = EditSource;
+
+/** GET /schedules/ — cada celda en la grilla de horarios */
 export interface ScheduleDTO {
     id: number;
     uuid: string;
@@ -11,8 +17,8 @@ export interface ScheduleDTO {
     end_datetime: string | null;
     title: string;
     description: string;
-    edit_source: EditSourceDTO;
-    edit_history: any[];
+    edit_source: EditSource;
+    edit_history: unknown[];
     last_edited_by: number | null;
     last_edited_at: string | null;
     created_by: number | null;
@@ -20,17 +26,17 @@ export interface ScheduleDTO {
     updated_at: string;
 }
 
-/** Payload for creating/updating a schedule entry */
+/** Payload para crear/actualizar una asignación de turno */
 export interface ScheduleWriteDTO {
     employee: number;
     shift_type: number;
     date: string;
     title?: string;
     description?: string;
-    edit_source?: EditSourceDTO;
+    edit_source?: EditSource;
 }
 
-/** Query params for filtering schedules */
+/** Query params para filtrar schedules */
 export interface ScheduleFilterParams {
     date_from?: string;
     date_to?: string;

@@ -1,5 +1,6 @@
 import type { IHttpClient } from '@/domain/interfaces/IHttpClient';
 import type { ScheduleDTO, ScheduleWriteDTO, ScheduleFilterParams } from '@/domain/dtos/ScheduleDTO';
+import type { ScheduleGenerateRequestDTO, ScheduleGenerateResponseDTO } from '@/domain/dtos/ScheduleGenerateDTO';
 import { API_ROUTES } from '@/domain/constants/endpoints';
 
 export class ScheduleRepository {
@@ -27,5 +28,12 @@ export class ScheduleRepository {
 
     async remove(uuid: string): Promise<void> {
         await this.http.delete(`${this.base}${uuid}/`);
+    }
+
+    async generate(payload: ScheduleGenerateRequestDTO): Promise<ScheduleGenerateResponseDTO> {
+        return this.http.post<ScheduleGenerateResponseDTO>(
+            API_ROUTES.SCHEDULES.GENERATE,
+            payload,
+        );
     }
 }

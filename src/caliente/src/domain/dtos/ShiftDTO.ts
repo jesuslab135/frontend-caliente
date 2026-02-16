@@ -10,9 +10,11 @@ export interface ShiftCategoryDTO {
     typical_start_time: string | null;
     typical_end_time: string | null;
     display_order: number;
+    created_at: string;
+    updated_at: string;
 }
 
-/** GET /shifttypes/ — category can be a nested object or integer FK */
+/** GET /shifttypes/ — category puede ser objeto anidado o FK numérico */
 export interface ShiftTypeDTO {
     id: number;
     code: string;
@@ -25,6 +27,8 @@ export interface ShiftTypeDTO {
     applicable_to_monitor: boolean;
     applicable_to_inplay: boolean;
     is_active: boolean;
+    created_at: string;
+    updated_at: string;
 }
 
 /** GET /shiftcycleconfigs/ */
@@ -36,4 +40,6 @@ export interface ShiftCycleConfigDTO {
     is_default: boolean;
     include_off: boolean;
     include_vac: boolean;
+    created_at: string;
+    updated_at: string;
 }

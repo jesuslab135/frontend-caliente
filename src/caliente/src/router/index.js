@@ -45,6 +45,7 @@ const routes = [
         path: 'employees',
         name: 'Employees',
         component: EmployeesView,
+        meta: { requiresAdmin: true }, // Añadido para RBAC
       },
       {
         path: 'events',
@@ -65,6 +66,7 @@ const routes = [
         path: 'settings',
         name: 'Settings',
         component: SettingsView,
+        meta: { requiresAdmin: true }, // Añadido para RBAC
       },
     ],
   },
@@ -82,6 +84,21 @@ router.beforeEach((to, from, next) => {
     next({ name: 'Login' })
   } else if (to.meta.requiresGuest && isAuthenticated) {
     next({ path: '/dashboard' })
+  // Añadido para RBAC — Guard de ruta para vistas exclusivas de Admin
+  } else if (to.meta.requiresAdmin) {
+    try {
+      const userRaw = localStorage.getItem('user')
+      const user = userRaw ? JSON.parse(userRaw) : null
+      const role = user?.role || user?._role
+      if (role !== 'ADMIN') {
+        next({ path: '/dashboard' })
+        return
+      }
+    } catch {
+      next({ path: '/dashboard' })
+      return
+    }
+    next()
   } else {
     next()
   }

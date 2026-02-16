@@ -21,6 +21,7 @@ export const API_ROUTES = {
     },
     SCHEDULES: {
         BASE: 'schedules/',
+        GENERATE: 'schedules/generate/',
     },
     SHIFT_CATEGORIES: {
         BASE: 'shiftcategories/',

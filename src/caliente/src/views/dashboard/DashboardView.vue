@@ -5,11 +5,21 @@ import { httpClient } from '@/di/http'
 import { EmployeeRepository } from '@/domain/repositories/EmployeeRepository'
 import { ScheduleRepository } from '@/domain/repositories/ScheduleRepository'
 import { ShiftRepository } from '@/domain/repositories/ShiftRepository'
+import GenerateScheduleModal from '@/components/schedule/GenerateScheduleModal.vue'
 
 const authStore = useAuthStore()
 const employeeRepo = new EmployeeRepository(httpClient)
 const scheduleRepo = new ScheduleRepository(httpClient)
 const shiftRepo = new ShiftRepository(httpClient)
+
+// Añadido para RBAC — Computed central: solo Admin puede editar el grid
+const canEdit = computed(() => authStore.isAdmin)
+
+// ── Generate modal state ──
+const showGenerateModal = ref(false)
+function openGenerateModal() { showGenerateModal.value = true }
+function closeGenerateModal() { showGenerateModal.value = false }
+function onScheduleGenerated() { fetchSchedules() }
 
 // ── Loading state ────────────────────────────────────────
 const isLoadingData = ref(true)
@@ -146,7 +156,8 @@ function getShiftInfo(code) {
 
 // ── View state ──────────────────────────────────────────
 const viewMode = ref('week')
-const scopeMode = ref('team')
+// Añadido para RBAC — Traders ven "Mi Horario" por defecto, Admin/Manager ven "Equipo"
+const scopeMode = ref(authStore.isAdmin || authStore.isManager ? 'team' : 'my')
 
 function getShift(empUuid, dateStr) {
   return scheduleMap.value[empUuid]?.[dateStr] || null
@@ -167,10 +178,15 @@ function getCycleForRole(role) { return shiftCycles.value[role] || shiftCycles.v
 
 function getNextInCycle(cur, role, dir = 1) {
   const cycle = getCycleForRole(role)
-  if (!cur) return cycle[0]
-  const idx = cycle.indexOf(cur)
-  if (idx === -1) return cycle[0]
-  return cycle[(idx + dir + cycle.length) % cycle.length]
+  // Closed loop: [null, ...shifts] — blank is index 0
+  const fullCycle = [null, ...cycle]
+  if (!cur) {
+    // Currently blank (index 0) → advance/retreat in the full cycle
+    return fullCycle[(0 + dir + fullCycle.length) % fullCycle.length]
+  }
+  const idx = fullCycle.indexOf(cur)
+  if (idx === -1) return fullCycle[1] || null
+  return fullCycle[(idx + dir + fullCycle.length) % fullCycle.length]
 }
 
 function getNextShiftPreview(empUuid, dayIndex) {
@@ -192,6 +208,7 @@ function pushUndo(empUuid, dateStr, oldCode) {
 }
 
 function undo() {
+  if (!canEdit.value) return // Añadido para RBAC — Guard
   const entry = undoStack.value.pop()
   if (!entry) return
   if (!scheduleMap.value[entry.empUuid]) scheduleMap.value[entry.empUuid] = {}
@@ -200,6 +217,7 @@ function undo() {
     saveScheduleToApi(entry.empUuid, entry.dateStr, entry.oldCode)
   } else {
     delete scheduleMap.value[entry.empUuid][entry.dateStr]
+    deleteScheduleFromApi(entry.empUuid, entry.dateStr)
   }
   const dayIdx = weekDays.value.findIndex(d => d.dateStr === entry.dateStr)
   if (dayIdx !== -1) flashCell(entry.empUuid, dayIdx)
@@ -216,6 +234,7 @@ function flashCell(empUuid, dayIndex) {
 
 // ── API schedule save (create or update) ─────────────────
 async function saveScheduleToApi(empUuid, date, shiftCode) {
+  if (!canEdit.value) return // Añadido para RBAC — Guard
   const emp = rawEmployees.value.find(e => e.uuid === empUuid)
   if (!emp) return
 
@@ -240,8 +259,23 @@ async function saveScheduleToApi(empUuid, date, shiftCode) {
   }
 }
 
+// ── API schedule delete ─────────────────────────────────
+async function deleteScheduleFromApi(empUuid, date) {
+  if (!canEdit.value) return
+  try {
+    const existingUuid = scheduleUuidMap.value[empUuid]?.[date]
+    if (existingUuid) {
+      await scheduleRepo.remove(existingUuid)
+      delete scheduleUuidMap.value[empUuid][date]
+    }
+  } catch (err) {
+    console.error('Error deleting shift:', err)
+  }
+}
+
 // ── Click-to-cycle (HU-005) ────────────────────────────
 function handleCellClick(employee, dayIndex, event) {
+  if (!canEdit.value) return // Añadido para RBAC — Guard
   event.preventDefault()
   if (editingCell.value) closeShiftPicker()
 
@@ -252,9 +286,14 @@ function handleCellClick(employee, dayIndex, event) {
 
   pushUndo(employee.uuid, dateStr, oldCode)
   if (!scheduleMap.value[employee.uuid]) scheduleMap.value[employee.uuid] = {}
-  scheduleMap.value[employee.uuid][dateStr] = newCode
+  if (newCode === null) {
+    delete scheduleMap.value[employee.uuid][dateStr]
+    deleteScheduleFromApi(employee.uuid, dateStr)
+  } else {
+    scheduleMap.value[employee.uuid][dateStr] = newCode
+    saveScheduleToApi(employee.uuid, dateStr, newCode)
+  }
   flashCell(employee.uuid, dayIndex)
-  saveScheduleToApi(employee.uuid, dateStr, newCode)
 }
 
 // ── Right-click shift picker ────────────────────────────
@@ -264,6 +303,7 @@ const pickerPos = ref({ top: 0, left: 0 })
 function handleCellRightClick(employee, dayIndex, event) {
   event.preventDefault()
   event.stopPropagation()
+  if (!canEdit.value) return // Añadido para RBAC — Guard (after preventDefault to block browser menu)
   const rect = event.currentTarget.getBoundingClientRect()
   const vw = window.innerWidth, vh = window.innerHeight
   let top = rect.bottom + 6, left = rect.left
@@ -275,20 +315,40 @@ function handleCellRightClick(employee, dayIndex, event) {
 }
 
 function selectShift(code) {
+  if (!canEdit.value) return // Añadido para RBAC — Guard
   if (editingCell.value) {
     const { empUuid, dayIndex } = editingCell.value
     const dateStr = weekDays.value[dayIndex].dateStr
     const oldCode = getShift(empUuid, dateStr)
     pushUndo(empUuid, dateStr, oldCode)
     if (!scheduleMap.value[empUuid]) scheduleMap.value[empUuid] = {}
-    scheduleMap.value[empUuid][dateStr] = code
+    if (code === null) {
+      delete scheduleMap.value[empUuid][dateStr]
+      deleteScheduleFromApi(empUuid, dateStr)
+    } else {
+      scheduleMap.value[empUuid][dateStr] = code
+      saveScheduleToApi(empUuid, dateStr, code)
+    }
     flashCell(empUuid, dayIndex)
-    saveScheduleToApi(empUuid, dateStr, code)
   }
   editingCell.value = null
 }
 
-function removeShift() { selectShift('OFF') }
+function removeShift() {
+  if (!canEdit.value) return // Añadido para RBAC — Guard
+  if (editingCell.value) {
+    const { empUuid, dayIndex } = editingCell.value
+    const dateStr = weekDays.value[dayIndex].dateStr
+    const oldCode = getShift(empUuid, dateStr)
+    pushUndo(empUuid, dateStr, oldCode)
+    if (!scheduleMap.value[empUuid]) scheduleMap.value[empUuid] = {}
+    delete scheduleMap.value[empUuid][dateStr]
+    flashCell(empUuid, dayIndex)
+    deleteScheduleFromApi(empUuid, dateStr)
+  }
+  editingCell.value = null
+}
+
 function closeShiftPicker() { editingCell.value = null }
 
 // ── Hover tooltip ───────────────────────────────────────
@@ -297,6 +357,7 @@ const tooltipPos = ref({ top: 0, left: 0 })
 let tooltipTimer = null
 
 function handleCellMouseEnter(employee, dayIndex, event) {
+  if (!canEdit.value) return // Añadido para RBAC — No tooltip de edición en modo lectura
   clearTimeout(tooltipTimer)
   tooltipTimer = setTimeout(() => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -312,6 +373,7 @@ function onGlobalClick(e) {
 }
 function onKeydown(e) {
   if (e.key === 'Escape') closeShiftPicker()
+  if (!canEdit.value) return // Añadido para RBAC — No undo en modo lectura
   if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo() }
 }
 
@@ -344,7 +406,7 @@ const coverageStats = computed(() => {
   })
 })
 
-// ── My schedule (trader personal view) ──────────────────
+// ── My schedule (personal view) ──────────────────────────
 const myEmployee = computed(() => {
   const empId = authStore.user?.employeeId
   return empId ? rawEmployees.value.find(e => e.employeeId === empId) : null
@@ -360,24 +422,20 @@ const mySchedule = computed(() => {
 
 // ── Data fetching ───────────────────────────────────────
 function buildLookupMaps() {
-  // Employee dbId → uuid
   const empMap = {}
   rawEmployees.value.forEach(emp => { empMap[emp.dbId] = emp.uuid })
   empDbIdToUuid.value = empMap
 
-  // Category id → code
   const catMap = {}
   shiftCategories.value.forEach(cat => { catMap[cat.id] = cat.code })
   catIdToCode.value = catMap
 
-  // Resolve category codes on shift types (backend returns category as integer FK)
   apiShiftTypes.value.forEach(st => {
     if (!st.categoryCode && st.rawCategoryId) {
       st.categoryCode = catMap[st.rawCategoryId] || null
     }
   })
 
-  // ShiftType id ↔ code
   const idToCode = {}, codeToId = {}
   apiShiftTypes.value.forEach(st => {
     idToCode[st.id] = st.code
@@ -461,19 +519,36 @@ onUnmounted(() => {
     </div>
 
     <!-- ================================================================ -->
-    <!-- ADMIN / MANAGER DASHBOARD                                        -->
+    <!-- DASHBOARD UNIFICADO — Todos los roles                             -->
+    <!-- Añadido para RBAC — Se eliminó la bifurcación por rol.            -->
+    <!-- Ahora todos ven la misma estructura; canEdit controla la edición. -->
     <!-- ================================================================ -->
-    <template v-else-if="authStore.isManager || authStore.isAdmin">
+    <template v-else>
 
       <!-- Title row -->
       <div class="mb-6">
-        <h2 class="text-xl font-bold text-arena-900">Horario del Equipo</h2>
+        <div class="flex items-center gap-3">
+          <h2 class="text-xl font-bold text-arena-900">
+            {{ scopeMode === 'team' ? 'Horario del Equipo' : 'Mi Horario' }}
+          </h2>
+          <!-- Añadido para RBAC — Badge de solo lectura para no-editores -->
+          <span
+            v-if="!canEdit"
+            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-arena-100 border border-arena-200/60 text-[11px] font-semibold text-arena-400 uppercase tracking-wide"
+          >
+            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+            </svg>
+            Solo lectura
+          </span>
+        </div>
         <p class="text-sm text-arena-400 mt-1">{{ weekLabel }}</p>
       </div>
 
       <!-- ── Toolbar ── -->
       <div class="flex flex-wrap items-center gap-3 mb-5">
-        <button class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-arena-200 text-sm font-medium text-arena-700 bg-white hover:bg-arena-50 transition-colors">
+        <!-- Añadido para RBAC — Solo Admin ve el botón de generar horario -->
+        <button v-if="canEdit" @click="openGenerateModal" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-arena-200 text-sm font-medium text-arena-700 bg-white hover:bg-arena-50 transition-colors">
           <svg class="w-4 h-4 text-arena-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
           </svg>
@@ -569,10 +644,12 @@ onUnmounted(() => {
                     </div>
                   </td>
 
+                  <!-- Añadido para RBAC — cursor-pointer solo si canEdit -->
                   <td
                     v-for="(day, dayIdx) in weekDays" :key="dayIdx"
-                    class="shift-cell px-1.5 py-1.5 text-center cursor-pointer select-none transition-colors"
+                    class="shift-cell px-1.5 py-1.5 text-center select-none transition-colors"
                     :class="[
+                      canEdit ? 'cursor-pointer' : '',
                       day.isWeekend ? 'bg-arena-50/50' : '',
                       editingCell?.empUuid === employee.uuid && editingCell?.dayIndex === dayIdx ? 'ring-2 ring-caliente-400 ring-inset' : ''
                     ]"
@@ -588,19 +665,22 @@ onUnmounted(() => {
                         getShiftInfo(getShift(employee.uuid, day.dateStr)).bg,
                         getShiftInfo(getShift(employee.uuid, day.dateStr)).text,
                         getShiftInfo(getShift(employee.uuid, day.dateStr)).border,
-                        flashingCell === `${employee.uuid}-${dayIdx}` ? 'scale-105 shadow-md' : 'hover:scale-[1.02] hover:shadow-sm',
+                        flashingCell === `${employee.uuid}-${dayIdx}` ? 'scale-105 shadow-md' : canEdit ? 'hover:scale-[1.02] hover:shadow-sm' : '',
                       ]"
                     >
                       <div class="text-xs font-bold leading-tight">{{ getShift(employee.uuid, day.dateStr) }}</div>
                       <div class="text-[10px] opacity-75 mt-0.5">{{ getShiftInfo(getShift(employee.uuid, day.dateStr)).time }}</div>
                     </div>
 
+                    <!-- Añadido para RBAC — Celda vacía: "+" solo para editores, vacío para lectura -->
                     <div
                       v-else
                       class="rounded-lg border border-dashed h-[52px] flex items-center justify-center transition-all"
-                      :class="flashingCell === `${employee.uuid}-${dayIdx}` ? 'border-caliente-300 bg-caliente-50/30' : 'border-transparent hover:border-arena-300'"
+                      :class="canEdit
+                        ? (flashingCell === `${employee.uuid}-${dayIdx}` ? 'border-caliente-300 bg-caliente-50/30' : 'border-transparent hover:border-arena-300')
+                        : 'border-transparent'"
                     >
-                      <svg class="w-4 h-4 text-arena-300 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                      <svg v-if="canEdit" class="w-4 h-4 text-arena-300 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                       </svg>
                     </div>
@@ -626,7 +706,7 @@ onUnmounted(() => {
                             class="text-[10px] font-semibold"
                             :class="(stats[cat.code]?.count || 0) >= (stats[cat.code]?.min || 0) ? 'text-success-500' : 'text-caliente-600'"
                           >{{ cat.code }}:{{ stats[cat.code]?.count || 0 }}</span>
-                          <span v-if="catIdx < coverageCats.length - 1" class="text-arena-300">·</span>
+                          <span v-if="catIdx < coverageCats.length - 1" class="text-arena-300">&middot;</span>
                         </template>
                       </div>
                     </td>
@@ -648,8 +728,8 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Keyboard shortcuts -->
-        <div class="mt-3 flex flex-wrap items-center gap-4 text-[10px] text-arena-400">
+        <!-- Añadido para RBAC — Atajos de teclado solo visibles para editores -->
+        <div v-if="canEdit" class="mt-3 flex flex-wrap items-center gap-4 text-[10px] text-arena-400">
           <span><kbd class="px-1 py-0.5 rounded border border-arena-200 bg-arena-50 font-mono text-arena-500">Clic</kbd> Ciclar turno</span>
           <span><kbd class="px-1 py-0.5 rounded border border-arena-200 bg-arena-50 font-mono text-arena-500">Shift+Clic</kbd> Ciclar inverso</span>
           <span><kbd class="px-1 py-0.5 rounded border border-arena-200 bg-arena-50 font-mono text-arena-500">Clic derecho</kbd> Menú de turnos</span>
@@ -657,8 +737,13 @@ onUnmounted(() => {
         </div>
       </template>
 
-      <!-- ── MY SCHEDULE VIEW (admin personal) ── -->
+      <!-- ── MY SCHEDULE VIEW ── -->
       <template v-else>
+        <!-- Añadido para RBAC — Saludo personal para traders en Mi Horario -->
+        <p v-if="!canEdit" class="text-sm text-arena-500 mb-4">
+          Hola, <span class="font-semibold text-arena-700">{{ authStore.fullName }}</span> — aquí tienes tu horario de la semana
+        </p>
+
         <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-8">
           <div
             v-for="day in mySchedule" :key="day.dateStr"
@@ -674,27 +759,56 @@ onUnmounted(() => {
             <p class="text-[10px] text-arena-400 mt-1.5">{{ day.shiftInfo.time }}</p>
           </div>
         </div>
+
+        <!-- Añadido para RBAC — Quick action links para Traders en Mi Horario -->
+        <div v-if="authStore.isTrader" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <router-link to="/swap-requests" class="flex items-center gap-4 bg-white border border-arena-200 rounded-xl px-5 py-4 hover:border-arena-300 transition-colors group">
+            <div class="w-10 h-10 rounded-full bg-caliente-50 flex items-center justify-center shrink-0">
+              <svg class="w-5 h-5 text-caliente-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-arena-900 group-hover:text-caliente-600 transition-colors">Solicitar Intercambio</p>
+              <p class="text-xs text-arena-400 mt-0.5">Intercambia un turno con un compañero</p>
+            </div>
+          </router-link>
+
+          <router-link to="/vacations" class="flex items-center gap-4 bg-white border border-arena-200 rounded-xl px-5 py-4 hover:border-arena-300 transition-colors group">
+            <div class="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center shrink-0">
+              <svg class="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-arena-900 group-hover:text-amber-600 transition-colors">Solicitar Vacaciones</p>
+              <p class="text-xs text-arena-400 mt-0.5">Envía una solicitud de periodo vacacional</p>
+            </div>
+          </router-link>
+        </div>
       </template>
 
-      <!-- ── HOVER TOOLTIP ── -->
+      <!-- ── HOVER TOOLTIP (solo editores) ── -->
+      <!-- Añadido para RBAC — Tooltip de preview solo para editores -->
       <Teleport to="body">
         <div
-          v-if="tooltipCell && !editingCell"
+          v-if="tooltipCell && !editingCell && canEdit"
           class="fixed z-40 pointer-events-none"
           :style="{ top: tooltipPos.top + 'px', left: tooltipPos.left + 'px', transform: 'translateX(-50%)' }"
         >
           <div class="bg-arena-900 text-white text-[10px] font-medium px-2.5 py-1.5 rounded-md shadow-lg whitespace-nowrap">
-            <span>{{ getNextShiftPreview(tooltipCell.empUuid, tooltipCell.dayIndex).current || '—' }}</span>
-            <span class="text-arena-400 mx-1">→</span>
-            <span class="text-caliente-300">{{ getNextShiftPreview(tooltipCell.empUuid, tooltipCell.dayIndex).next }}</span>
+            <span>{{ getNextShiftPreview(tooltipCell.empUuid, tooltipCell.dayIndex).current || 'Vacío' }}</span>
+            <span class="text-arena-400 mx-1">&rarr;</span>
+            <span class="text-caliente-300">{{ getNextShiftPreview(tooltipCell.empUuid, tooltipCell.dayIndex).next || 'Vacío' }}</span>
             <span class="text-arena-500 ml-1.5">(clic)</span>
           </div>
         </div>
       </Teleport>
 
-      <!-- ── SHIFT PICKER POPOVER ── -->
+      <!-- ── SHIFT PICKER POPOVER (solo editores) ── -->
+      <!-- Añadido para RBAC — Menú contextual solo para editores -->
       <Teleport to="body">
-        <div v-if="editingCell" class="shift-picker-popover fixed z-50" :style="{ top: pickerPos.top + 'px', left: pickerPos.left + 'px' }">
+        <div v-if="editingCell && canEdit" class="shift-picker-popover fixed z-50" :style="{ top: pickerPos.top + 'px', left: pickerPos.left + 'px' }">
           <div class="w-[300px] bg-white rounded-xl border border-arena-200 shadow-lg overflow-hidden">
             <div class="px-4 py-3 border-b border-arena-100 bg-arena-50/50">
               <p class="text-xs font-semibold text-arena-700 uppercase tracking-wider">Asignar turno directo</p>
@@ -729,68 +843,13 @@ onUnmounted(() => {
           </div>
         </div>
       </Teleport>
-    </template>
 
-    <!-- ================================================================ -->
-    <!-- TRADER DASHBOARD                                                  -->
-    <!-- ================================================================ -->
-    <template v-else>
-      <div class="mb-6">
-        <h2 class="text-lg font-semibold text-arena-900">Hola, {{ authStore.fullName }}</h2>
-        <p class="text-sm text-arena-400 mt-0.5">Aquí tienes tu horario de la semana · {{ weekLabel }}</p>
-      </div>
-
-      <div class="flex items-center gap-2 mb-5">
-        <button @click="goToToday" class="px-2.5 py-1.5 rounded-md border border-arena-200 text-xs font-medium text-arena-600 hover:bg-arena-100 transition-colors">Hoy</button>
-        <button @click="navigateWeek(-1)" class="p-1.5 rounded-md border border-arena-200 text-arena-500 hover:bg-arena-100 transition-colors">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-        </button>
-        <button @click="navigateWeek(1)" class="p-1.5 rounded-md border border-arena-200 text-arena-500 hover:bg-arena-100 transition-colors">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
-        </button>
-      </div>
-
-      <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-8">
-        <div
-          v-for="day in mySchedule" :key="day.dateStr"
-          class="bg-white border rounded-lg p-4 text-center transition-colors"
-          :class="day.isToday ? 'border-caliente-200 ring-1 ring-caliente-100' : 'border-arena-200'"
-        >
-          <p class="text-xs font-medium text-arena-400">{{ day.name }}</p>
-          <p class="text-lg font-bold mt-1" :class="day.isToday ? 'text-caliente-600' : 'text-arena-700'">{{ day.date }}</p>
-          <p class="text-[11px] text-arena-400 mb-3">{{ day.month }}</p>
-          <div class="inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-bold" :class="[day.shiftInfo.bg, day.shiftInfo.text, day.shiftInfo.border]">
-            {{ day.shiftCode }}
-          </div>
-          <p class="text-[10px] text-arena-400 mt-1.5">{{ day.shiftInfo.time }}</p>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <router-link to="/swap-requests" class="flex items-center gap-4 bg-white border border-arena-200 rounded-lg px-5 py-4 hover:border-arena-300 transition-colors group">
-          <div class="w-10 h-10 rounded-full bg-caliente-50 flex items-center justify-center shrink-0">
-            <svg class="w-5 h-5 text-caliente-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
-            </svg>
-          </div>
-          <div>
-            <p class="text-sm font-semibold text-arena-900 group-hover:text-caliente-600 transition-colors">Solicitar Intercambio</p>
-            <p class="text-xs text-arena-400 mt-0.5">Intercambia un turno con un compañero</p>
-          </div>
-        </router-link>
-
-        <router-link to="/vacations" class="flex items-center gap-4 bg-white border border-arena-200 rounded-lg px-5 py-4 hover:border-arena-300 transition-colors group">
-          <div class="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center shrink-0">
-            <svg class="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
-            </svg>
-          </div>
-          <div>
-            <p class="text-sm font-semibold text-arena-900 group-hover:text-amber-600 transition-colors">Solicitar Vacaciones</p>
-            <p class="text-xs text-arena-400 mt-0.5">Envía una solicitud de periodo vacacional</p>
-          </div>
-        </router-link>
-      </div>
+      <!-- ── GENERATE SCHEDULE MODAL ── -->
+      <GenerateScheduleModal
+        :visible="showGenerateModal"
+        @close="closeGenerateModal"
+        @generated="onScheduleGenerated"
+      />
     </template>
   </div>
 </template>

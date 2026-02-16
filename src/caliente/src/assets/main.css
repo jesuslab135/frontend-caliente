@@ -24,10 +24,17 @@
   --color-arena-100: #F3F4F6;
   --color-arena-50: #F9FAFB;
 
-  /* ── Semantic ── */
+  /* ── Semantic — Success ── */
+  --color-success-700: #047857;
+  --color-success-600: #059669;
   --color-success-500: #10B981;
   --color-success-400: #34D399;
+  --color-success-200: #A7F3D0;
+  --color-success-100: #D1FAE5;
   --color-success-50: #ECFDF5;
+
+  /* ── Semantic — Warning ── */
+  --color-warning-600: #D97706;
   --color-warning-500: #F59E0B;
   --color-warning-50: #FFFBEB;
 

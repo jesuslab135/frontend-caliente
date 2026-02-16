@@ -1,4 +1,10 @@
-export type UserRoleDTO = 'MONITOR_TRADER' | 'INPLAY_TRADER' | 'MANAGER' | 'ADMIN';
+import type { EmployeeRole } from '../types';
+
+/**
+ * Re-export del tipo canónico para backward compatibility.
+ * Fuente de verdad: types/roles.ts
+ */
+export type UserRoleDTO = EmployeeRole;
 
 /** Nested employee profile inside the auth user response */
 export interface EmployeeProfileDTO {
