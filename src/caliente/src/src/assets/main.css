@@ -1,0 +1,44 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/forms";
+
+@theme {
+  /* ── Caliente Brand ── */
+  --color-caliente-600: #E30613;
+  --color-caliente-700: #C20510;
+  --color-caliente-800: #9E040D;
+  --color-caliente-500: #F41726;
+  --color-caliente-400: #F84B56;
+  --color-caliente-50: #FEF2F2;
+  --color-caliente-100: #FEE2E3;
+
+  /* ── Arena Dark (Control Room palette) ── */
+  --color-arena-950: #08090C;
+  --color-arena-900: #0F1116;
+  --color-arena-800: #181B22;
+  --color-arena-700: #1F232D;
+  --color-arena-600: #2A2F3B;
+  --color-arena-500: #3B4150;
+  --color-arena-400: #6B7280;
+  --color-arena-300: #9CA3AF;
+  --color-arena-200: #D1D5DB;
+  --color-arena-100: #F3F4F6;
+  --color-arena-50: #F9FAFB;
+
+  /* ── Semantic — Success ── */
+  --color-success-700: #047857;
+  --color-success-600: #059669;
+  --color-success-500: #10B981;
+  --color-success-400: #34D399;
+  --color-success-200: #A7F3D0;
+  --color-success-100: #D1FAE5;
+  --color-success-50: #ECFDF5;
+
+  /* ── Semantic — Warning ── */
+  --color-warning-600: #D97706;
+  --color-warning-500: #F59E0B;
+  --color-warning-50: #FFFBEB;
+
+  /* ── Typography ── */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
